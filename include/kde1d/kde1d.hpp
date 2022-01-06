@@ -14,23 +14,21 @@ class Kde1d
 {
   public:
     // constructors
-    Kde1d(const Eigen::VectorXd& x,
-          double bw = NAN,
-          double mult = 1.0,
-          double xmin = NAN,
-          double xmax = NAN,
-          size_t deg = 2,
-          const Eigen::VectorXd& weights = Eigen::VectorXd());
-
     Kde1d(double bw = NAN,
           double mult = 1.0,
           double xmin = NAN,
           double xmax = NAN,
           size_t deg = 2);
 
-    Kde1d(const interp::InterpolationGrid1d& grid,
+    Kde1d(const interp::InterpolationGrid& grid,
           double xmin = NAN,
           double xmax = NAN);
+
+    void fit(const Eigen::VectorXd& x,
+             const Eigen::VectorXd& weights = Eigen::VectorXd());
+
+    void fit(const Eigen::VectorXi& x,
+             const Eigen::VectorXd& weights = Eigen::VectorXd());
 
     // statistical functions
     Eigen::VectorXd pdf(const Eigen::VectorXd& x) const;
@@ -51,17 +49,20 @@ class Kde1d
 
   private:
     // data members
-    interp::InterpolationGrid1d grid_;
+    interp::InterpolationGrid grid_;
     double xmin_;
     double xmax_;
     bool is_discrete_{ false };
     double bw_{ NAN };
+    double mult_{ 1.0 };
     size_t deg_{ 2 };
     double loglik_{ NAN };
     double edf_{ NAN };
     static constexpr double K0_ = 0.3989425;
 
     // private methods
+    void fit_internal(const Eigen::VectorXd& x,
+                      const Eigen::VectorXd& weights = Eigen::VectorXd());
     Eigen::VectorXd pdf_continuous(const Eigen::VectorXd& x) const;
     Eigen::VectorXd cdf_continuous(const Eigen::VectorXd& x) const;
     Eigen::VectorXd quantile_continuous(const Eigen::VectorXd& x) const;
@@ -94,34 +95,55 @@ class Kde1d
 };
 
 //! constructor for fitting the density estimate.
-//! @param x vector of observations
-//! @param bw positive bandwidth parameter (fixed component).
+//! @param bw positive bandwidth parameter (NaN means automatic selection).
+//! @param mult bandwidth multiplier.
 //! @param xmin lower bound for the support of the density, `NaN` means no
 //!   boundary.
 //! @param xmax upper bound for the support of the density, `NaN` means no
 //!   boundary.
 //! @param deg order of the local polynomial.
-//! @param weights vector of weights for each observation (can be empty).
-inline Kde1d::Kde1d(const Eigen::VectorXd& x,
-                    double bw,
+inline Kde1d::Kde1d(double bw,
                     double mult,
                     double xmin,
                     double xmax,
-                    size_t deg,
-                    const Eigen::VectorXd& weights)
+                    size_t deg)
   : xmin_(xmin)
   , xmax_(xmax)
   , bw_(bw)
+  , mult_(mult)
   , deg_(deg)
+{}
+
+//! @param x vector of observations
+//! @param weights vector of weights for each observation (optional).
+inline void
+Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
+{
+    fit_internal(x, weights);
+}
+
+//! @param x vector of observations
+//! @param weights vector of weights for each observation (optional).
+inline void
+Kde1d::fit(const Eigen::VectorXi& x, const Eigen::VectorXd& weights)
+{
+    is_discrete_ = true;
+    fit_internal(x.cast<double>(), weights);
+}
+
+//! @param x vector of observations
+//! @param weights vector of weights for each observation (optional).
+inline void
+Kde1d::fit_internal(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
     if (weights.size() > 0 && (weights.size() != x.size()))
         throw std::runtime_error("x and weights must have the same size.");
-    if (deg > 2)
+    if (deg_ > 2)
         throw std::runtime_error("deg must not be larger than 2.");
     check_levels(x);
     if (is_discrete_) {
-        xmin = NAN;
-        xmax = NAN;
+        xmin_ = NAN;
+        xmax_ = NAN;
     }
 
     // preprocessing for nans and jittering
@@ -135,7 +157,7 @@ inline Kde1d::Kde1d(const Eigen::VectorXd& x,
     xx = boundary_transform(xx);
 
     // bandwidth selection
-    bw_ = select_bw(xx, bw_, mult, deg, w);
+    bw_ = select_bw(xx, bw_, mult_, deg_, w);
 
     // fit model and evaluate in transformed domain
     Eigen::VectorXd grid_points = construct_grid_points(xx);
@@ -149,13 +171,13 @@ inline Kde1d::Kde1d(const Eigen::VectorXd& x,
 
     // construct interpolation grid
     // (3 iterations for normalization to a proper density)
-    grid_ = interp::InterpolationGrid1d(grid_points, values, 3);
+    grid_ = interp::InterpolationGrid(grid_points, values, 3);
 
     // calculate log-likelihood of final estimate
     loglik_ = grid_.interpolate(x).cwiseMax(1e-20).array().log().sum();
 
     // calculate effective degrees of freedom
-    interp::InterpolationGrid1d infl_grid(
+    interp::InterpolationGrid infl_grid(
       grid_points, fitted.col(1).cwiseMin(2.0).cwiseMax(0), 0);
     edf_ = infl_grid.interpolate(x).sum();
 }
@@ -166,7 +188,7 @@ inline Kde1d::Kde1d(const Eigen::VectorXd& x,
 //!   boundary.
 //! @param xmax upper bound for the support of the density, `NaN` means no
 //!   boundary.
-inline Kde1d::Kde1d(const interp::InterpolationGrid1d& grid,
+inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
                     double xmin,
                     double xmax)
   : grid_(grid)
@@ -213,7 +235,8 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
     return fhat;
 }
 
-//! computes the cdf of the kernel density estimate by numerical integration.
+//! computes the cdf of the kernel density estimate by numerical
+//! integration.
 //! @param x vector of evaluation points.
 //! @return a vector of cdf values.
 inline Eigen::VectorXd

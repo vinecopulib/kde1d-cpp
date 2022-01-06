@@ -11,12 +11,12 @@ namespace interp {
 //!
 //! The class is used for implementing kernel estimators. It makes storing the
 //! observations obsolete and allows for fast numerical integration.
-class InterpolationGrid1d
+class InterpolationGrid
 {
   public:
-    InterpolationGrid1d() {}
+    InterpolationGrid() {}
 
-    InterpolationGrid1d(const Eigen::VectorXd& grid_points,
+    InterpolationGrid(const Eigen::VectorXd& grid_points,
                         const Eigen::VectorXd& values,
                         int norm_times);
 
@@ -55,7 +55,7 @@ class InterpolationGrid1d
 //! @param grid_points an ascending sequence of grid points.
 //! @param values a vector of values of same length as grid_points.
 //! @param norm_times how many times the normalization routine should run.
-inline InterpolationGrid1d::InterpolationGrid1d(
+inline InterpolationGrid::InterpolationGrid(
   const Eigen::VectorXd& grid_points,
   const Eigen::VectorXd& values,
   int norm_times)
@@ -73,7 +73,7 @@ inline InterpolationGrid1d::InterpolationGrid1d(
 //!
 //! @param times how many times the normalization routine should run.
 inline void
-InterpolationGrid1d::normalize(int times)
+InterpolationGrid::normalize(int times)
 {
     double x_max = grid_points_(grid_points_.size() - 1);
     double int_max;
@@ -86,7 +86,7 @@ InterpolationGrid1d::normalize(int times)
 //! Interpolation
 //! @param x vector of evaluation points.
 inline Eigen::VectorXd
-InterpolationGrid1d::interpolate(const Eigen::VectorXd& x) const
+InterpolationGrid::interpolate(const Eigen::VectorXd& x) const
 {
     Eigen::VectorXd tmp_coefs(4);
     auto interpolate_one = [&](const double& xx) {
@@ -112,7 +112,7 @@ InterpolationGrid1d::interpolate(const Eigen::VectorXd& x) const
 //! @param x a vector  of evaluation points
 //! @param normalize whether to normalize the integral to a maximum value of 1.
 inline Eigen::VectorXd
-InterpolationGrid1d::integrate(const Eigen::VectorXd& x, bool normalize) const
+InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
 {
     Eigen::VectorXd res(x.size());
     auto ord = tools::get_order(x);
@@ -181,7 +181,7 @@ InterpolationGrid1d::integrate(const Eigen::VectorXd& x, bool normalize) const
 //! @param x evaluation point.
 //! @param a polynomial coefficients
 inline double
-InterpolationGrid1d::cubic_poly(const double& x, const Eigen::VectorXd& a) const
+InterpolationGrid::cubic_poly(const double& x, const Eigen::VectorXd& a) const
 {
     double x2 = x * x;
     double x3 = x2 * x;
@@ -193,7 +193,7 @@ InterpolationGrid1d::cubic_poly(const double& x, const Eigen::VectorXd& a) const
 //! @param x evaluation point.
 //! @param a polynomial coefficients.
 inline double
-InterpolationGrid1d::cubic_indef_integral(const double& x,
+InterpolationGrid::cubic_indef_integral(const double& x,
                                           const Eigen::VectorXd& a) const
 {
     double x2 = x * x;
@@ -208,7 +208,7 @@ InterpolationGrid1d::cubic_indef_integral(const double& x,
 //! @param upper upper limit of the integral.
 //! @param a polynomial coefficients.
 inline double
-InterpolationGrid1d::cubic_integral(const double& lower,
+InterpolationGrid::cubic_integral(const double& lower,
                                     const double& upper,
                                     const Eigen::VectorXd& a) const
 {
@@ -216,7 +216,7 @@ InterpolationGrid1d::cubic_integral(const double& lower,
 }
 
 inline int
-InterpolationGrid1d::find_cell(const double& x0) const
+InterpolationGrid::find_cell(const double& x0) const
 {
     int low = 0, high = grid_points_.size() - 1;
     int mid;
@@ -235,7 +235,7 @@ InterpolationGrid1d::find_cell(const double& x0) const
 //!
 //! @param k the cell index.
 inline Eigen::VectorXd
-InterpolationGrid1d::find_cell_coefs(const int& k) const
+InterpolationGrid::find_cell_coefs(const int& k) const
 {
     // indices for cell and neighboring grid points
     int k0 = std::max(k - 1, 0);
