@@ -1,0 +1,6 @@
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/install/strip.dir
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/install/local.dir
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/install.dir
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/list_install_components.dir
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/rebuild_cache.dir
+/home/n5/dev/cpp/kde1d-cpp/build/CMakeFiles/edit_cache.dir
