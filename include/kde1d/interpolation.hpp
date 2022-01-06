@@ -118,7 +118,7 @@ InterpolationGrid1d::integrate(const Eigen::VectorXd& x, bool normalize) const
   tmp_coefs = find_cell_coefs(0);
   tmp_eps = (grid_points_(1) - grid_points_(0));
 
-  for (size_t i = 0; i < x.size(); ++i) {
+  for (long i = 0; i < x.size(); ++i) {
     double upr = x(ord(i));
 
     if (std::isnan(upr)) {

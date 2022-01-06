@@ -87,7 +87,7 @@ inline Eigen::Matrix<size_t, Eigen::Dynamic, 1>
 get_order(const Eigen::VectorXd& x)
 {
   Eigen::Matrix<size_t, Eigen::Dynamic, 1> order(x.size());
-  for (size_t i = 0; i < x.size(); ++i)
+  for (long i = 0; i < x.size(); ++i)
     order(i) = i;
   std::stable_sort(
     order.data(),
@@ -110,7 +110,7 @@ linbin(const Eigen::VectorXd& x,
   double delta = (upper - lower) / num_bins;
   double rem, lxi;
   size_t li;
-  for (size_t i = 0; i < x.size(); ++i) {
+  for (long i = 0; i < x.size(); ++i) {
     lxi = (x(i) - lower) / delta;
     li = static_cast<size_t>(lxi);
     rem = lxi - li;

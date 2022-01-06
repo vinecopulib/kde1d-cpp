@@ -5,9 +5,9 @@ target_include_directories(kde1d INTERFACE
         )
 
 if(BUILD_TESTING)
-#     set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
-#     set(unit_tests test_all)
-#     add_subdirectory(test)
+     set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+     set(unit_tests test_all)
+     add_subdirectory(test)
 endif(BUILD_TESTING)
 
 # Related to exports for linux/mac and code coverage

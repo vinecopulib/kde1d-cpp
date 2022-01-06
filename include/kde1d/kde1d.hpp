@@ -1,9 +1,9 @@
 #pragma once
 
-#include "kde1d/dpik.hpp"
-#include "kde1d/interpolation.hpp"
-#include "kde1d/stats.hpp"
-#include "kde1d/tools.hpp"
+#include "dpik.hpp"
+#include "interpolation.hpp"
+#include "stats.hpp"
+#include "tools.hpp"
 #include <cmath>
 #include <functional>
 
@@ -264,7 +264,7 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
                            35);
 
   // replace with NaN where the input was NaN
-  for (size_t i = 0; i < x.size(); i++) {
+  for (long i = 0; i < x.size(); i++) {
     if (std::isnan(x(i)))
       q(i) = x(i);
   }

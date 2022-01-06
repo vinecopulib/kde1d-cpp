@@ -182,7 +182,7 @@ equi_jitter(const Eigen::VectorXd& x)
   // add deterministic, conditionally uniorm noise
   Eigen::VectorXd noise = Eigen::VectorXd::Zero(n);
   size_t i = 0;
-  for (size_t k = 0; k < tab.rows(); ++k) {
+  for (long k = 0; k < tab.rows(); ++k) {
     for (size_t cnt = 1; cnt <= tab(k, 1); ++cnt)
       noise(i++) = -0.5 + cnt / (tab(k, 1) + 1.0);
     cnt = 1;
@@ -190,7 +190,7 @@ equi_jitter(const Eigen::VectorXd& x)
   Eigen::VectorXd jtr = srt + noise;
 
   // invert the permutation to return jittered x in original order
-  for (size_t i = 0; i < perm.size(); ++i)
+  for (long i = 0; i < perm.size(); ++i)
     srt(perm(i)) = jtr(i);
 
   return srt;
