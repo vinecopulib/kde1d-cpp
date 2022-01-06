@@ -32,7 +32,9 @@ class Kde1d
 
     // statistical functions
     Eigen::VectorXd pdf(const Eigen::VectorXd& x) const;
+    Eigen::VectorXd pdf(const Eigen::VectorXi& x) const;
     Eigen::VectorXd cdf(const Eigen::VectorXd& x) const;
+    Eigen::VectorXd cdf(const Eigen::VectorXi& x) const;
     Eigen::VectorXd quantile(const Eigen::VectorXd& x) const;
     Eigen::VectorXd simulate(size_t n,
                              const std::vector<int>& seeds = {}) const;
@@ -66,11 +68,10 @@ class Kde1d
     Eigen::VectorXd pdf_continuous(const Eigen::VectorXd& x) const;
     Eigen::VectorXd cdf_continuous(const Eigen::VectorXd& x) const;
     Eigen::VectorXd quantile_continuous(const Eigen::VectorXd& x) const;
-    Eigen::VectorXd pdf_discrete(const Eigen::VectorXd& x) const;
-    Eigen::VectorXd cdf_discrete(const Eigen::VectorXd& x) const;
-    Eigen::VectorXd quantile_discrete(const Eigen::VectorXd& x) const;
+    Eigen::VectorXd pdf_discrete(const Eigen::VectorXi& x) const;
+    Eigen::VectorXd cdf_discrete(const Eigen::VectorXi& x) const;
+    Eigen::VectorXd quantile_discrete(const Eigen::VectorXi& x) const;
 
-    void check_levels(const Eigen::VectorXd& x) const;
     Eigen::VectorXd kern_gauss(const Eigen::VectorXd& x);
     Eigen::MatrixXd fit_lp(const Eigen::VectorXd& x,
                            const Eigen::VectorXd& grid,
@@ -112,13 +113,17 @@ inline Kde1d::Kde1d(double bw,
   , bw_(bw)
   , mult_(mult)
   , deg_(deg)
-{}
+{
+    if (deg_ > 2)
+        throw std::runtime_error("deg must not be larger than 2.");
+}
 
 //! @param x vector of observations
 //! @param weights vector of weights for each observation (optional).
 inline void
 Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
+    is_discrete_ = false;
     fit_internal(x, weights);
 }
 
@@ -128,6 +133,8 @@ inline void
 Kde1d::fit(const Eigen::VectorXi& x, const Eigen::VectorXd& weights)
 {
     is_discrete_ = true;
+    xmin_ = NAN;
+    xmax_ = NAN;
     fit_internal(x.cast<double>(), weights);
 }
 
@@ -138,13 +145,6 @@ Kde1d::fit_internal(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
     if (weights.size() > 0 && (weights.size() != x.size()))
         throw std::runtime_error("x and weights must have the same size.");
-    if (deg_ > 2)
-        throw std::runtime_error("deg must not be larger than 2.");
-    check_levels(x);
-    if (is_discrete_) {
-        xmin_ = NAN;
-        xmax_ = NAN;
-    }
 
     // preprocessing for nans and jittering
     Eigen::VectorXd xx = x;
@@ -202,7 +202,16 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x) const
 {
-    return !is_discrete_ ? pdf_continuous(x) : pdf_discrete(x);
+    return !is_discrete_ ? cdf_continuous(x) : cdf_discrete(x.cast<int>());
+}
+
+//! computes the pdf of the kernel density estimate by interpolation.
+//! @param x vector of evaluation points.
+//! @return a vector of pdf values.
+inline Eigen::VectorXd
+Kde1d::pdf(const Eigen::VectorXi& x) const
+{
+    return !is_discrete_ ? cdf_continuous(x.cast<double>()) : cdf_discrete(x);
 }
 
 inline Eigen::VectorXd
@@ -224,14 +233,15 @@ Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
 }
 
 inline Eigen::VectorXd
-Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
+Kde1d::pdf_discrete(const Eigen::VectorXi& x) const
 {
-    check_levels(x);
-    auto fhat = pdf_continuous(x);
+    auto fhat = pdf_continuous(x.cast<double>());
     // normalize
     auto mx = std::lround(grid_.get_grid_max());
-    Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
+    auto mn = std::lround(grid_.get_grid_min());
+    Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
     fhat /= grid_.interpolate(lvs).sum();
+    
     return fhat;
 }
 
@@ -242,7 +252,17 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf(const Eigen::VectorXd& x) const
 {
-    return !is_discrete_ ? cdf_continuous(x) : cdf_discrete(x);
+    return !is_discrete_ ? cdf_continuous(x) : cdf_discrete(x.cast<int>());
+}
+
+//! computes the cdf of the kernel density estimate by numerical
+//! integration.
+//! @param x vector of evaluation points.
+//! @return a vector of cdf values.
+inline Eigen::VectorXd
+Kde1d::cdf(const Eigen::VectorXi& x) const
+{
+    return !is_discrete_ ? cdf_continuous(x.cast<double>()) : cdf_discrete(x);
 }
 
 inline Eigen::VectorXd
@@ -252,16 +272,16 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 }
 
 inline Eigen::VectorXd
-Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
+Kde1d::cdf_discrete(const Eigen::VectorXi& x) const
 {
-    check_levels(x);
     auto mx = std::lround(grid_.get_grid_max());
-    Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
-    auto f_cum = pdf(lvs);
+    auto mn = std::lround(grid_.get_grid_min());
+    Eigen::VectorXi lvs = Eigen::VectorXi::LinSpaced(mx - mn + 1, mn, mx);
+    auto f_cum = pdf_discrete(lvs);
     for (long i = 1; i <= mx; ++i)
         f_cum(i) += f_cum(i - 1);
 
-    return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
+    return tools::unaryExpr_or_nan_int(x, [&f_cum](const double& xx) {
         return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
     });
 }
@@ -274,7 +294,8 @@ Kde1d::quantile(const Eigen::VectorXd& x) const
 {
     if ((x.minCoeff() < 0) | (x.maxCoeff() > 1))
         throw std::runtime_error("probabilities must lie in (0, 1).");
-    return !is_discrete_ ? quantile_continuous(x) : quantile_discrete(x);
+    return !is_discrete_ ? quantile_continuous(x)
+                         : quantile_discrete(x.cast<int>());
 }
 
 inline Eigen::VectorXd
@@ -294,11 +315,11 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 }
 
 inline Eigen::VectorXd
-Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
+Kde1d::quantile_discrete(const Eigen::VectorXi& x) const
 {
     auto mx = std::lround(grid_.get_grid_max());
-    Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
-    auto p = cdf(lvs);
+    Eigen::VectorXi lvs = Eigen::VectorXi::LinSpaced(mx + 1, 0, mx);
+    auto p = cdf_discrete(lvs);
     auto quan = [&](const double& pp) {
         long lv = 0;
         while ((pp >= p(lv)) && (lv < mx))
@@ -306,7 +327,16 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
         return lvs(lv);
     };
 
-    return tools::unaryExpr_or_nan(x, quan);
+    Eigen::VectorXd out(x.size());
+    for (long i = 0; i < x.size(); ++i) {
+        if (std::isnan(x(i))) {
+            out(i) = std::numeric_limits<double>::quiet_NaN();
+        } else {
+            out(i) = quan(x(i));
+        }
+    }
+
+    return out;
 }
 
 //! simulates data from the model.
@@ -318,16 +348,6 @@ Kde1d::simulate(size_t n, const std::vector<int>& seeds) const
 {
     auto u = stats::simulate_uniform(n, seeds);
     return this->quantile(u);
-}
-
-inline void
-Kde1d::check_levels(const Eigen::VectorXd& x) const
-{
-    if (!is_discrete_)
-        return;
-    if ((x.array() != x.array().round()).any() | (x.minCoeff() < 0)) {
-        throw std::runtime_error("x must only contain non-negative integers.");
-    }
 }
 
 //! Gaussian kernel (truncated at +/- 5).

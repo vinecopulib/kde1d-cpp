@@ -22,6 +22,22 @@ unaryExpr_or_nan(const Eigen::MatrixXd& x, const T& func)
   });
 }
 
+//! applies a function to each non-NaN value, otherwise returns NaN
+//! @param x function argument.
+//! @param func function to be applied.
+template<typename T>
+Eigen::MatrixXd
+unaryExpr_or_nan_int(const Eigen::MatrixXi& x, const T& func)
+{
+  return x.unaryExpr([&func](int y) {
+    if (std::isnan(y)) {
+      return std::numeric_limits<double>::quiet_NaN();
+    } else {
+      return func(y);
+    }
+  });
+}
+
 //! computes the inverse \f$ f^{-1} \f$ of a function \f$ f \f$ by the
 //! bisection method.
 //!

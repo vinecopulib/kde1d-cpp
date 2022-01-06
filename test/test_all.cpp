@@ -8,14 +8,29 @@ int main(int argc, char **argv) {
 
 #include "../include/kde1d.hpp"
 
-int main() {
-    
-    Eigen::VectorXd x(100);
-    kde1d::Kde1d fit;
-    fit.fit(x);
-    fit.pdf(x);
-    fit.cdf(x);
-    fit.quantile(x.cwiseMax(0));
+int
+main()
+{
+
+    {
+        // continuous data
+        Eigen::VectorXd x(100);
+        kde1d::Kde1d fit;
+        fit.fit(x);
+        fit.pdf(x);
+        fit.cdf(x);
+        fit.quantile(x.cwiseMax(0));
+    }
+
+    {
+        // discrete data
+        Eigen::VectorXi x = Eigen::VectorXi::LinSpaced(101, -50, 50);
+        kde1d::Kde1d fit;
+        fit.fit(x);
+        fit.pdf(x);
+        fit.cdf(x);
+        fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
+    }
 
     std::cout << "success" << std::endl;
 
