@@ -54,7 +54,7 @@ jobs:
             brew update
             brew install lcov eigen boost
           elif [ "${{ matrix.config.os }}" == "windows-latest" ]; then
-            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
+            # cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
             # choco upgrade cmake
             choco install boost-msvc-14.1
             choco install eigen
