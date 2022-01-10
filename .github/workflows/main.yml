@@ -60,7 +60,8 @@ jobs:
             choco install wget
             wget http://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.zip
             7z x eigen-3.3.7.zip -o"C:\projects" -y > nul
-            mkdir build && cd build && cmake "C:\projects\eigen-3.3.7"
+            cd "C:\projects\eigen-3.3.7"
+            mkdir build && cd build && cmake ..
             cmake --build . --config Release --target install
           fi
       shell: bash
