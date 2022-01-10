@@ -53,8 +53,8 @@ public:
   {
     std::stringstream ss;
     ss << "Kde1d("
-       << "bw=" << bw_ << ", mult=" << mult_ << ", xmin=" << xmin_ << ", xmax="
-       << ", deg=" << deg_ << ")";
+       << "bw=" << bw_ << ", mult=" << mult_ << ", xmin=" << xmin_
+       << ", xmax=" << xmax_ << ", deg=" << deg_ << ")";
     return ss.str();
   }
 
