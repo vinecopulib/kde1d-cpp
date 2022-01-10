@@ -14,15 +14,15 @@ class Kde1d
 {
   public:
     // constructors
-    Kde1d(double bw = NAN,
+    Kde1d(double bw = std::numeric_limits<double>::quiet_NaN(),
           double mult = 1.0,
-          double xmin = NAN,
-          double xmax = NAN,
+          double xmin = std::numeric_limits<double>::quiet_NaN(),
+          double xmax = std::numeric_limits<double>::quiet_NaN(),
           size_t deg = 2);
 
     Kde1d(const interp::InterpolationGrid& grid,
-          double xmin = NAN,
-          double xmax = NAN);
+          double xmin = std::numeric_limits<double>::quiet_NaN(),
+          double xmax = std::numeric_limits<double>::quiet_NaN());
 
     void fit(const Eigen::VectorXd& x,
              const Eigen::VectorXd& weights = Eigen::VectorXd());
@@ -55,11 +55,11 @@ class Kde1d
     double xmin_;
     double xmax_;
     bool is_discrete_{ false };
-    double bw_{ NAN };
+    double bw_{ std::numeric_limits<double>::quiet_NaN() };
     double mult_{ 1.0 };
     size_t deg_{ 2 };
-    double loglik_{ NAN };
-    double edf_{ NAN };
+    double loglik_{ std::numeric_limits<double>::quiet_NaN() };
+    double edf_{ std::numeric_limits<double>::quiet_NaN() };
     static constexpr double K0_ = 0.3989425;
 
     // private methods
@@ -133,8 +133,8 @@ inline void
 Kde1d::fit(const Eigen::VectorXi& x, const Eigen::VectorXd& weights)
 {
     is_discrete_ = true;
-    xmin_ = NAN;
-    xmax_ = NAN;
+    xmin_ = std::numeric_limits<double>::quiet_NaN();
+    xmax_ = std::numeric_limits<double>::quiet_NaN();
     fit_internal(x.cast<double>(), weights);
 }
 
@@ -241,7 +241,7 @@ Kde1d::pdf_discrete(const Eigen::VectorXi& x) const
     auto mn = std::lround(grid_.get_grid_min());
     Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
     fhat /= grid_.interpolate(lvs).sum();
-    
+
     return fhat;
 }
 
