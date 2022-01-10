@@ -42,6 +42,7 @@ public:
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
   double get_bw() const { return bw_; }
+  double get_mult() const { return mult_; }
   double get_deg() const { return deg_; }
   double get_xmin() const { return xmin_; }
   double get_xmax() const { return xmax_; }
@@ -52,9 +53,8 @@ public:
   {
     std::stringstream ss;
     ss << "Kde1d("
-       << "bw=" << kde1d.get_bw() << ", mult=" << kde1d.get_mult()
-       << ", xmin=" << kde1d.get_xmin() << ", xmax=" << kde1d.get_xmax()
-       << ", deg=" << kde1d.get_deg() << ")";
+       << "bw=" << bw_ << ", mult=" << mult_ << ", xmin=" << xmin_ << ", xmax="
+       << ", deg=" << deg_ << ")";
     return ss.str();
   }
 
