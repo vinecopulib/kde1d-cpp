@@ -45,18 +45,18 @@ jobs:
 
     - name: Install other dependencies
       run:   |
-          if [ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]; then
+          if [ "${{ matrix.config.os }}" == "ubuntu-latest" ]; then
             sudo apt-get update
             sudo apt-get install --no-install-recommends -y lcov libeigen3-dev libboost-all-dev
             sudo apt-get install --no-install-recommends -y --allow-unauthenticated g++ clang
             sudo apt-get autoremove
-          elif [ "${{ matrix.cfg.os }}" == "macos-latest" ]; then
+          elif [ "${{ matrix.config.os }}" == "macos-latest" ]; then
             rm '/usr/local/bin/gfortran'
             rm '/usr/local/bin/2to3'
             brew update
             brew install lcov eigen doxygen graphviz boost
-          elif [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
-            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg.platform }}
+          elif [ "${{ matrix.config.os }}" == "windows-latest" ]; then
+            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
             # choco upgrade cmake
             choco install boost-msvc-14.1
             choco install wget
