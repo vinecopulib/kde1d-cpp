@@ -7,6 +7,7 @@ int main(int argc, char **argv) {
 */
 
 #include "../include/kde1d.hpp"
+#include <iostream>
 
 int
 main()
