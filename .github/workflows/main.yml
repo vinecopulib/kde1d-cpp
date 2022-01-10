@@ -57,12 +57,7 @@ jobs:
             cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
             # choco upgrade cmake
             choco install boost-msvc-14.1
-            choco install wget
-            wget http://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.zip
-            7z x eigen-3.3.7.zip -o"C:\projects" -y > nul
-            cd "C:\projects\eigen-3.3.7"
-            mkdir build && cd build && cmake ..
-            cmake --build . --config Release --target install
+            choco install eigen
           fi
       shell: bash
 
