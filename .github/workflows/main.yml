@@ -51,8 +51,6 @@ jobs:
             sudo apt-get install --no-install-recommends -y --allow-unauthenticated g++ clang
             sudo apt-get autoremove
           elif [ "${{ matrix.config.os }}" == "macos-latest" ]; then
-            rm '/usr/local/bin/gfortran'
-            rm '/usr/local/bin/2to3'
             brew update
             brew install lcov eigen doxygen graphviz boost
           elif [ "${{ matrix.config.os }}" == "windows-latest" ]; then
