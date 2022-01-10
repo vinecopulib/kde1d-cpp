@@ -8,7 +8,9 @@ namespace kde1d {
 
 namespace bw {
 
-static constexpr M_PI = 3.141592653589793;
+#ifndef M_PI
+static constexpr double M_PI = 3.141592653589793;
+#endif
 
 //! Bandwidth selection for local-likelihood density estimation.
 //! Methodology is similar to Sheather and Jones(1991), but asymptotic
