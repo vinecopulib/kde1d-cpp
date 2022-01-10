@@ -211,7 +211,7 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x) const
 {
-  return !is_discrete_ ? cdf_continuous(x) : cdf_discrete(x.cast<int>());
+  return !is_discrete_ ? pdf_continuous(x) : pdf_discrete(x.cast<int>());
 }
 
 //! computes the pdf of the kernel density estimate by interpolation.
@@ -220,7 +220,7 @@ Kde1d::pdf(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXi& x) const
 {
-  return !is_discrete_ ? cdf_continuous(x.cast<double>()) : cdf_discrete(x);
+  return !is_discrete_ ? pdf_continuous(x.cast<double>()) : pdf_discrete(x);
 }
 
 inline Eigen::VectorXd
