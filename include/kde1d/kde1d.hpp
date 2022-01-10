@@ -329,7 +329,7 @@ Kde1d::quantile_discrete(const Eigen::VectorXi& x) const
 
     Eigen::VectorXd out(x.size());
     for (long i = 0; i < x.size(); ++i) {
-        if (std::isnan(x(i))) {
+        if (std::isnan(static_cast<double>(x(i)))) {
             out(i) = std::numeric_limits<double>::quiet_NaN();
         } else {
             out(i) = quan(x(i));
