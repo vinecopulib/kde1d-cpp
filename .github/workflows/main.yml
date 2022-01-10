@@ -55,13 +55,13 @@ jobs:
             brew install lcov eigen boost
           elif [ "${{ matrix.config.os }}" == "windows-latest" ]; then
             cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
-            choco upgrade cmake
+            # choco upgrade cmake
             choco install boost-msvc-14.1
             choco install wget
             wget http://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.zip
             7z x eigen-3.3.7.zip -o"C:\projects" -y > nul
-            mkdir build && cd build && cmake "C:\projects\eigen-3.3.7" &&
-            make install
+            mkdir build && cd build && cmake "C:\projects\eigen-3.3.7"
+            cmake --build . --config Release --target install
           fi
       shell: bash
 
