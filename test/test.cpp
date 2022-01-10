@@ -27,9 +27,9 @@ main()
         Eigen::VectorXi x = Eigen::VectorXi::LinSpaced(101, -50, 50);
         kde1d::Kde1d fit;
         fit.fit(x);
-        fit.pdf(x);
-        fit.cdf(x);
-        fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
+        // fit.pdf(x);
+        // fit.cdf(x);
+        // fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
     }
 
     std::cout << "success" << std::endl;
