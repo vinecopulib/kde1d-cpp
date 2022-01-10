@@ -281,9 +281,11 @@ Kde1d::cdf_discrete(const Eigen::VectorXi& x) const
     for (long i = 1; i <= mx; ++i)
         f_cum(i) += f_cum(i - 1);
 
-    return tools::unaryExpr_or_nan_int(x, [&f_cum](const double& xx) {
-        return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
-    });
+    Eigen::VectorXd out(x.size());
+    for (long i = 0; i < x.size(); ++i) {
+        out(i) = std::min(1.0, std::max(f_cum(static_cast<size_t>(x(i))), 0.0));
+    }
+    return out;
 }
 
 //! computes the cdf of the kernel density estimate by numerical inversion.
