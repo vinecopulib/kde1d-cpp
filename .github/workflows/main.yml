@@ -43,6 +43,28 @@ jobs:
     - uses: actions/checkout@v2
     - uses: codecov/codecov-action@v2
 
+    - name: Install other dependencies
+      run:   |
+          if [ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y lcov libeigen3-dev libboost-all-dev
+            sudo apt-get install --no-install-recommends -y --allow-unauthenticated g++ clang
+            sudo apt-get autoremove
+          elif [ "${{ matrix.cfg.os }}" == "macos-latest" ]; then
+            rm '/usr/local/bin/gfortran'
+            rm '/usr/local/bin/2to3'
+            brew update
+            brew install lcov eigen doxygen graphviz boost
+          elif [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
+            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg.platform }}
+            # choco upgrade cmake
+            choco install boost-msvc-14.1
+            choco install wget
+            wget http://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.zip
+            7z x eigen-3.3.7.zip -o"C:\projects" -y > nul
+          fi
+      shell: bash
+
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
