@@ -61,7 +61,9 @@ jobs:
             wget http://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.zip
             7z x eigen-3.3.7.zip -o"C:\projects" -y > nul
             cd "C:\projects\eigen-3.3.7"
-            cmake .
+            mkdir build 
+            cd build
+            cmake ..
             cmake --build . --config Release --target install
           fi
       shell: bash
