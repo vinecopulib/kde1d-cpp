@@ -132,17 +132,17 @@ inline Kde1d::Kde1d(bool discrete,
   , bandwidth_(bandwidth)
   , degree_(degree)
 {
-  // if (discrete_ and (!std::isnan(xmin_) or !std::isnan(xmax_))) {
+  // if (discrete_ && (!std::isnan(xmin_) || !std::isnan(xmax_))) {
   //   throw std::invalid_argument("xmin and xmax can"
   //                               " only be NaN for discrete distributions");
   // }
-  if (!std::isnan(xmin) and !std::isnan(xmax) and xmin > xmax) {
+  if (!std::isnan(xmin) && !std::isnan(xmax) && (xmin > xmax)) {
     throw std::invalid_argument("xmin must be smaller than xmax");
   }
   if (multiplier <= 0.0) {
     throw std::invalid_argument("multiplier must be positive");
   }
-  if (!std::isnan(bandwidth_) and bandwidth_ <= 0.0) {
+  if (!std::isnan(bandwidth_) && (bandwidth_ <= 0.0)) {
     throw std::invalid_argument("bandwidth must be positive");
   }
   if (degree_ > 2) {
@@ -582,14 +582,14 @@ Kde1d::check_inputs(const Eigen::VectorXd& x,
   if (x.size() == 0)
     throw std::invalid_argument("x must not be empty");
 
-  if (weights.size() > 0 and (weights.size() != x.size()))
+  if ((weights.size() > 0) && (weights.size() != x.size()))
     throw std::invalid_argument("x and weights must have the same size");
 
-  if (!std::isnan(xmin_) and x.minCoeff() < xmin_)
+  if (!std::isnan(xmin_) && (x.minCoeff() < xmin_))
     throw std::invalid_argument(
       "all values in x must be larger than or equal to xmin");
 
-  if (!std::isnan(xmax_) and x.maxCoeff() > xmax_)
+  if (!std::isnan(xmax_) && (x.maxCoeff() > xmax_))
     throw std::invalid_argument(
       "all values in x must be smaller than or equal to xmax");
 }
