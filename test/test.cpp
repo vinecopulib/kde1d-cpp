@@ -1,39 +1,46 @@
-/*
-int main(int argc, char **argv) {
-
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
-*/
-
 #include "../include/kde1d.hpp"
-#include <iostream>
 
-int
-main()
+#define CATCH_CONFIG_MAIN
+#include "catch.hpp"
+
+using namespace kde1d;
+
+TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 {
+  // continuous data
+  Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
 
-    {
-        // continuous data
-        Eigen::VectorXd x(100);
-        kde1d::Kde1d fit;
-        fit.fit(x);
-        fit.pdf(x);
-        fit.cdf(x);
-        fit.quantile(x.cwiseMax(0));
-    }
+  SECTION("fit local constant")
+  {
+    kde1d::Kde1d fit(NAN, 1, NAN, NAN, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
 
-    {
-        // discrete data
-        Eigen::VectorXi x = Eigen::VectorXi::LinSpaced(101, -50, 50);
-        kde1d::Kde1d fit;
-        fit.fit(x);
-        // fit.pdf(x);
-        // fit.cdf(x);
-        // fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
-    }
+  SECTION("fit local linear")
+  {
+    kde1d::Kde1d fit(NAN, 1, NAN, NAN, 1);
+    CHECK_NOTHROW(fit.fit(x));
+  }
 
-    std::cout << "success" << std::endl;
+  SECTION("fit local quadratic")
+  {
+    kde1d::Kde1d fit;
+    CHECK_NOTHROW(fit.fit(x));
+  }
 
-    return 0;
+//   fit.pdf(x);
+//   fit.cdf(x);
+//   fit.quantile(x.cwiseMax(0));
+}
+
+
+TEST_CASE("discrete data", "[discrete]")
+{
+  // discrete data
+  Eigen::VectorXi x = Eigen::VectorXi::LinSpaced(101, -50, 50);
+  kde1d::Kde1d fit;
+  fit.fit(x);
+  // fit.pdf(x);
+  // fit.cdf(x);
+  // fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
 }
