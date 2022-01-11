@@ -253,7 +253,7 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
     f_cum(i) += f_cum(i - 1);
 
   return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
-    return std::min(1.0, std::max(f_cum(xx), 0.0));
+    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
   });
 }
 
