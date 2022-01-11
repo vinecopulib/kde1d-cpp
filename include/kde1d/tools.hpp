@@ -30,7 +30,7 @@ Eigen::MatrixXd
 unaryExpr_or_nan_int(const Eigen::MatrixXi& x, const T& func)
 {
   return x.unaryExpr([&func](int y) {
-    if (std::isnan(y)) {
+    if (std::isnan(static_cast<double>(y))) {
       return std::numeric_limits<double>::quiet_NaN();
     } else {
       return func(y);
