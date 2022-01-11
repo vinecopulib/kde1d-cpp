@@ -106,7 +106,7 @@ quantile(const Eigen::VectorXd& x,
   if (w.size() == 0)
     return quantile(x, q);
   if (w.size() != x.size())
-    throw std::runtime_error("x and w must have the same size");
+    throw std::invalid_argument("x and w must have the same size");
   double n = static_cast<double>(x.size());
   size_t m = q.size();
   Eigen::VectorXd res(m);
@@ -208,7 +208,7 @@ inline Eigen::VectorXd
 simulate_uniform(size_t n, std::vector<int> seeds)
 {
   if (n < 1)
-    throw std::runtime_error("n  must be at least 1.");
+    throw std::invalid_argument("n  must be at least 1.");
 
   if (seeds.size() == 0) { // no seeds provided, seed randomly
     std::random_device rd{};

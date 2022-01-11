@@ -56,28 +56,34 @@ public:
     return ss.str();
   }
 
+protected:
+  void set_interpolation_grid(const interp::InterpolationGrid& grid);
+  void set_xmin_xmax(double xmin = NAN, double xmax = NAN);
+
 private:
   // data members
-  interp::InterpolationGrid grid_;
+  bool discrete_;
   double xmin_;
   double xmax_;
-  bool discrete_;
-  double bandwidth_;
   double multiplier_;
+  double bandwidth_;
   size_t degree_;
+  interp::InterpolationGrid grid_;
   double loglik_{ NAN };
   double edf_{ NAN };
   static constexpr double K0_ = 0.3989425;
 
   // private methods
+  void check_inputs(const Eigen::VectorXd& x,
+                    const Eigen::VectorXd& weights = Eigen::VectorXd()) const;
   void fit_internal(const Eigen::VectorXd& x,
                     const Eigen::VectorXd& weights = Eigen::VectorXd());
   Eigen::VectorXd pdf_continuous(const Eigen::VectorXd& x) const;
   Eigen::VectorXd cdf_continuous(const Eigen::VectorXd& x) const;
   Eigen::VectorXd quantile_continuous(const Eigen::VectorXd& x) const;
-  Eigen::VectorXd pdf_discrete(const Eigen::VectorXi& x) const;
-  Eigen::VectorXd cdf_discrete(const Eigen::VectorXi& x) const;
-  Eigen::VectorXd quantile_discrete(const Eigen::VectorXi& x) const;
+  Eigen::VectorXd pdf_discrete(const Eigen::VectorXd& x) const;
+  Eigen::VectorXd cdf_discrete(const Eigen::VectorXd& x) const;
+  Eigen::VectorXd quantile_discrete(const Eigen::VectorXd& x) const;
 
   Eigen::VectorXd kern_gauss(const Eigen::VectorXd& x);
   Eigen::MatrixXd fit_lp(const Eigen::VectorXd& x,
@@ -126,8 +132,22 @@ inline Kde1d::Kde1d(bool discrete,
   , bandwidth_(bandwidth)
   , degree_(degree)
 {
-  if (degree_ > 2)
-    throw std::runtime_error("degree must not be larger than 2.");
+  // if (discrete_ and (!std::isnan(xmin_) or !std::isnan(xmax_))) {
+  //   throw std::invalid_argument("xmin and xmax can"
+  //                               " only be NaN for discrete distributions");
+  // }
+  if (!std::isnan(xmin) and !std::isnan(xmax) and xmin > xmax) {
+    throw std::invalid_argument("xmin must be smaller than xmax");
+  }
+  if (multiplier <= 0.0) {
+    throw std::invalid_argument("multiplier must be positive");
+  }
+  if (!std::isnan(bandwidth_) and bandwidth_ <= 0.0) {
+    throw std::invalid_argument("bandwidth must be positive");
+  }
+  if (degree_ > 2) {
+    throw std::invalid_argument("degree must be 0, 1 or 2");
+  }
 }
 
 //! @param x vector of observations
@@ -135,8 +155,7 @@ inline Kde1d::Kde1d(bool discrete,
 inline void
 Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
-  if (weights.size() > 0 && (weights.size() != x.size()))
-    throw std::runtime_error("x and weights must have the same size.");
+  check_inputs(x, weights);
 
   // preprocessing for nans and jittering
   Eigen::VectorXd xx = x;
@@ -174,26 +193,13 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   edf_ = infl_grid.interpolate(x).sum();
 }
 
-//! construct model from an already fit interpolation grid.
-//! @param grid the interpolation grid.
-//! @param xmin lower bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param xmax upper bound for the support of the density, `NaN` means no
-//!   boundary.
-inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
-                    double xmin,
-                    double xmax)
-  : grid_(grid)
-  , xmin_(xmin)
-  , xmax_(xmax)
-{}
-
 //! computes the pdf of the kernel density estimate by interpolation.
 //! @param x vector of evaluation points.
 //! @return a vector of pdf values.
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x) const
 {
+  check_inputs(x);
   return !discrete_ ? pdf_continuous(x) : pdf_discrete(x);
 }
 
@@ -201,13 +207,6 @@ inline Eigen::VectorXd
 Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
 {
   Eigen::VectorXd fhat = grid_.interpolate(x);
-  if (!std::isnan(xmin_)) {
-    fhat = (x.array() < xmin_).select(Eigen::VectorXd::Zero(x.size()), fhat);
-  }
-  if (!std::isnan(xmax_)) {
-    fhat = (x.array() > xmax_).select(Eigen::VectorXd::Zero(x.size()), fhat);
-  }
-
   auto trunc = [](const double& xx) { return std::max(xx, 0.0); };
   return tools::unaryExpr_or_nan(fhat, trunc);
   ;
@@ -233,6 +232,7 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf(const Eigen::VectorXd& x) const
 {
+  check_inputs(x);
   return !discrete_ ? cdf_continuous(x) : cdf_discrete(x);
 }
 
@@ -247,13 +247,13 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
   auto mx = std::lround(grid_.get_grid_max());
   auto mn = std::lround(grid_.get_grid_min());
-  Eigen::VectorXd lvs = Eigen::VectorXi::LinSpaced(mx - mn + 1, mn, mx);
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
   auto f_cum = pdf_discrete(lvs);
   for (long i = 1; i <= mx; ++i)
     f_cum(i) += f_cum(i - 1);
 
-  return tools::unaryExpr_or_nan_int(x, [&f_cum](const double& xx) {
-    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
+  return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
+    return std::min(1.0, std::max(f_cum(xx), 0.0));
   });
 }
 
@@ -264,7 +264,7 @@ inline Eigen::VectorXd
 Kde1d::quantile(const Eigen::VectorXd& x) const
 {
   if ((x.minCoeff() < 0) | (x.maxCoeff() > 1))
-    throw std::runtime_error("probabilities must lie in (0, 1).");
+    throw std::invalid_argument("probabilities must lie in (0, 1).");
   return !discrete_ ? quantile_continuous(x) : quantile_discrete(x);
 }
 
@@ -288,7 +288,7 @@ inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
   auto mx = std::lround(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXi::LinSpaced(mx + 1, 0, mx);
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
   auto p = cdf_discrete(lvs);
   auto quan = [&](const double& pp) {
     long lv = 0;
@@ -573,6 +573,38 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   return bandwidth;
+}
+
+inline void
+Kde1d::check_inputs(const Eigen::VectorXd& x,
+                    const Eigen::VectorXd& weights) const
+{
+  if (x.size() == 0)
+    throw std::invalid_argument("x must not be empty");
+
+  if (weights.size() > 0 and (weights.size() != x.size()))
+    throw std::invalid_argument("x and weights must have the same size");
+
+  if (!std::isnan(xmin_) and x.minCoeff() < xmin_)
+    throw std::invalid_argument(
+      "all values in x must be larger than or equal to xmin");
+
+  if (!std::isnan(xmax_) and x.maxCoeff() > xmax_)
+    throw std::invalid_argument(
+      "all values in x must be smaller than or equal to xmax");
+}
+
+void
+Kde1d::set_interpolation_grid(const interp::InterpolationGrid& grid)
+{
+  grid_ = grid;
+}
+
+void
+Kde1d::set_xmin_xmax(double xmin, double xmax)
+{
+  xmin_ = xmin;
+  xmax_ = xmax;
 }
 
 } // end kde1d

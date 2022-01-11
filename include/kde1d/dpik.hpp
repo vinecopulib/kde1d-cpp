@@ -79,7 +79,7 @@ inline double
 PluginBandwidthSelector::get_bandwidth_for_bkfe(size_t drv)
 {
   if (drv % 2 != 0) {
-    throw std::runtime_error("only even drv allowed.");
+    throw std::invalid_argument("only even drv allowed.");
   }
 
   // effective sample size
@@ -132,7 +132,7 @@ PluginBandwidthSelector::ll_ibias2(size_t degree)
           2 * (f1.array().pow(4) / f0.array().pow(3)).matrix();
     arg = (0.125 * arg).cwiseAbs2().cwiseQuotient(f0);
   } else {
-    throw std::runtime_error("degree must be one of {0, 1, 2}.");
+    throw std::invalid_argument("degree must be one of {0, 1, 2}.");
   }
   return bin_counts_.cwiseProduct(arg).sum() / bin_counts_.sum();
 }
@@ -144,7 +144,7 @@ inline double
 PluginBandwidthSelector::ll_ivar(size_t degree)
 {
   if (degree > 2)
-    throw std::runtime_error("degree must be one of {0, 1, 2}.");
+    throw std::invalid_argument("degree must be one of {0, 1, 2}.");
   return (degree < 2 ? 1.0 : 27.0 / 16.0) * 0.5 / std::sqrt(M_PI);
 }
 

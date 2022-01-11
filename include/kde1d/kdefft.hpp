@@ -48,7 +48,7 @@ inline KdeFFT::KdeFFT(const Eigen::VectorXd& x,
   , upper_(upper)
 {
   if (weights.size() > 0 && (weights.size() != x.size()))
-    throw std::runtime_error("x and weights must have the same size");
+    throw std::invalid_argument("x and weights must have the same size");
 
   Eigen::VectorXd w;
   if (weights.size() > 0) {
