@@ -16,17 +16,17 @@ class KdeFFT
 {
 public:
   KdeFFT(const Eigen::VectorXd& x,
-         double bw,
+         double bandwidth,
          double lower,
          double upper,
          const Eigen::VectorXd& weights = Eigen::VectorXd());
 
   Eigen::VectorXd kde_drv(size_t drv) const;
   Eigen::VectorXd get_bin_counts() const { return bin_counts_; };
-  void set_bw(double bw) { bw_ = bw; };
+  void set_bandwidth(double bandwidth) { bandwidth_ = bandwidth; };
 
 private:
-  double bw_;
+  double bandwidth_;
   double lower_;
   double upper_;
   static constexpr size_t num_bins_{ 400 };
@@ -34,16 +34,16 @@ private:
 };
 
 //! @param x vector of observations.
-//! @param bw the bandwidth parameter.
+//! @param bandwidth the bandwidth parameter.
 //! @param lower lower bound of the grid.
 //! @param upper bound of the grid.
 //! @param weigths optional vector of weights for each observation.
 inline KdeFFT::KdeFFT(const Eigen::VectorXd& x,
-                      double bw,
+                      double bandwidth,
                       double lower,
                       double upper,
                       const Eigen::VectorXd& weights)
-  : bw_(bw)
+  : bandwidth_(bandwidth)
   , lower_(lower)
   , upper_(upper)
 {
@@ -67,12 +67,12 @@ KdeFFT::kde_drv(size_t drv) const
 {
   double delta = (upper_ - lower_) / num_bins_;
   double tau = 4.0 + drv;
-  size_t L = std::floor(tau * bw_ / delta);
+  size_t L = std::floor(tau * bandwidth_ / delta);
   L = std::min(L, num_bins_ + 1);
 
-  double tmp_dbl = L * delta / bw_;
+  double tmp_dbl = L * delta / bandwidth_;
   Eigen::VectorXd arg = Eigen::VectorXd::LinSpaced(L + 1, 0.0, tmp_dbl);
-  tmp_dbl = std::pow(bw_, drv + 1.0);
+  tmp_dbl = std::pow(bandwidth_, drv + 1.0);
   arg = stats::dnorm_drv(arg, drv) / (tmp_dbl * bin_counts_.sum());
 
   tmp_dbl = num_bins_ + L + 2.0;
@@ -94,6 +94,6 @@ KdeFFT::kde_drv(size_t drv) const
   return tmp2.head(num_bins_ + 1).real();
 }
 
-} // end kde1d::bw
+} // end kde1d::bandwidth
 
 } // end kde1d
