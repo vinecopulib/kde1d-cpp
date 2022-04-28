@@ -22,22 +22,6 @@ unaryExpr_or_nan(const Eigen::MatrixXd& x, const T& func)
   });
 }
 
-//! applies a function to each non-NaN value, otherwise returns NaN
-//! @param x function argument.
-//! @param func function to be applied.
-template<typename T>
-Eigen::MatrixXd
-unaryExpr_or_nan_int(const Eigen::MatrixXi& x, const T& func)
-{
-  return x.unaryExpr([&func](int y) {
-    if (std::isnan(static_cast<double>(y))) {
-      return std::numeric_limits<double>::quiet_NaN();
-    } else {
-      return func(y);
-    }
-  });
-}
-
 //! computes the inverse \f$ f^{-1} \f$ of a function \f$ f \f$ by the
 //! bisection method.
 //!
@@ -75,9 +59,6 @@ invert_f(const Eigen::VectorXd& x,
 inline void
 remove_nans(Eigen::VectorXd& x, Eigen::VectorXd& weights)
 {
-  if ((weights.size() > 0) & (weights.size() != x.rows()))
-    throw std::runtime_error("sizes of x and weights don't match.");
-
   // if an entry is nan or weight is zero, move it to the end
   size_t last = x.size() - 1;
   for (size_t i = 0; i < last + 1; i++) {
@@ -99,10 +80,10 @@ remove_nans(Eigen::VectorXd& x, Eigen::VectorXd& weights)
     weights.conservativeResize(last + 1);
 }
 
-inline Eigen::Matrix<size_t, Eigen::Dynamic, 1>
+inline Eigen::VectorXi
 get_order(const Eigen::VectorXd& x)
 {
-  Eigen::Matrix<size_t, Eigen::Dynamic, 1> order(x.size());
+  Eigen::VectorXi order(x.size());
   for (long i = 0; i < x.size(); ++i)
     order(i) = i;
   std::stable_sort(
