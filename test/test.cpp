@@ -35,5 +35,5 @@ main()
 
   std::cout << "success" << std::endl;
 
-  return 0;
+  return 1;
 }
