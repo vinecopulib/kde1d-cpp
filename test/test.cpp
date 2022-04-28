@@ -12,13 +12,13 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 
   SECTION("fit local constant")
   {
-    kde1d::Kde1d fit(NAN, 1, NAN, NAN, 0);
+    kde1d::Kde1d fit(false, NAN, NAN, 1, NAN, 0);
     CHECK_NOTHROW(fit.fit(x));
   }
 
   SECTION("fit local linear")
   {
-    kde1d::Kde1d fit(NAN, 1, NAN, NAN, 1);
+    kde1d::Kde1d fit(false, NAN, NAN, 1, NAN, 1);
     CHECK_NOTHROW(fit.fit(x));
   }
 
@@ -30,23 +30,19 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 
   SECTION("detect wrong arguments")
   {
-    CHECK_THROWS(kde1d::Kde1d(-1));
-    CHECK_THROWS(kde1d::Kde1d(1, 0));
-    CHECK_THROWS(kde1d::Kde1d(1, 1, NAN, NAN, 3));
+    CHECK_THROWS(kde1d::Kde1d(true, 1, 0));
+    CHECK_THROWS(kde1d::Kde1d(false, 1, 1, 1, NAN, 3));
   }
 
-  //   fit.pdf(x);
-  //   fit.cdf(x);
-  //   fit.quantile(x.cwiseMax(0));
 }
 
 TEST_CASE("discrete data", "[discrete]")
 {
   // discrete data
-  Eigen::VectorXi x = Eigen::VectorXi::LinSpaced(101, -50, 50);
-  kde1d::Kde1d fit;
+  Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(101, -50, 50);
+  kde1d::Kde1d fit(true);
   fit.fit(x);
-  // fit.pdf(x);
-  // fit.cdf(x);
-  // fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
+  fit.pdf(x);
+  fit.cdf(x);
+  fit.quantile(Eigen::VectorXd::LinSpaced(100, 0.001, 0.999));
 }

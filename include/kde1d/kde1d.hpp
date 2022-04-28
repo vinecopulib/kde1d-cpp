@@ -245,15 +245,16 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
-  auto mx = std::lround(grid_.get_grid_max());
-  auto mn = std::lround(grid_.get_grid_min());
+  auto mx = std::ceil(grid_.get_grid_max());
+  auto mn = std::floor(grid_.get_grid_min());
   Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
   auto f_cum = pdf_discrete(lvs);
-  for (long i = 1; i <= mx; ++i)
-    f_cum(i) += f_cum(i - 1);
+  for (long i = 0; i < mx; ++i)
+    f_cum(i + 1) += f_cum(i);
 
-  return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
-    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
+  return tools::unaryExpr_or_nan(x, [&](const double& xx) {
+    auto cdf = f_cum(static_cast<size_t>(std::lround(xx - mn)));
+    return std::min(1.0, std::max(cdf, 0.0));
   });
 }
 
