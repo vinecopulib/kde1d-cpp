@@ -84,7 +84,7 @@ quantile(const Eigen::VectorXd& x, const Eigen::VectorXd& q)
 
   // linear interpolation (quantile of type 7 in R)
   for (size_t i = 0; i < m; ++i) {
-    size_t k = std::floor(n * q(i));
+    size_t k = static_cast<size_t>(std::floor(n * q(i)));
     double p = static_cast<double>(k) / n;
     res(i) = x2[k];
     if (k < n)
@@ -107,7 +107,7 @@ quantile(const Eigen::VectorXd& x,
     return quantile(x, q);
   if (w.size() != x.size())
     throw std::invalid_argument("x and w must have the same size");
-  double n = static_cast<double>(x.size());
+  double n = x.size();
   size_t m = q.size();
   Eigen::VectorXd res(m);
 
@@ -128,7 +128,6 @@ quantile(const Eigen::VectorXd& x,
   }
 
   double wsum = w.sum() - w(ind[n - 1]);
-  ;
   for (size_t j = 0; j < m; ++j) {
     size_t i = 1;
     while ((wcum(i) < q(j) * wsum) & (i < n))
@@ -163,7 +162,7 @@ equi_jitter(const Eigen::VectorXd& x)
   // compute contingency table
   Eigen::MatrixXd tab(n, 2);
   size_t lev = 0;
-  size_t cnt = 1;
+  double cnt = 1;
   for (size_t k = 1; k < n; ++k) {
     if (srt(k - 1) != srt(k)) {
       tab(lev, 0) = srt(k - 1);

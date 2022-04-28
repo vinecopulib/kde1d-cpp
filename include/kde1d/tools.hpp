@@ -80,10 +80,10 @@ remove_nans(Eigen::VectorXd& x, Eigen::VectorXd& weights)
     weights.conservativeResize(last + 1);
 }
 
-inline Eigen::Matrix<size_t, Eigen::Dynamic, 1>
+inline Eigen::VectorXi
 get_order(const Eigen::VectorXd& x)
 {
-  Eigen::Matrix<size_t, Eigen::Dynamic, 1> order(x.size());
+  Eigen::VectorXi order(x.size());
   for (long i = 0; i < x.size(); ++i)
     order(i) = i;
   std::stable_sort(

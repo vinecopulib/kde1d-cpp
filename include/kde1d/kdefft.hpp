@@ -21,7 +21,7 @@ public:
          double upper,
          const Eigen::VectorXd& weights = Eigen::VectorXd());
 
-  Eigen::VectorXd kde_drv(size_t drv) const;
+  Eigen::VectorXd kde_drv(unsigned drv) const;
   Eigen::VectorXd get_bin_counts() const { return bin_counts_; };
   void set_bandwidth(double bandwidth) { bandwidth_ = bandwidth; };
 
@@ -63,11 +63,11 @@ inline KdeFFT::KdeFFT(const Eigen::VectorXd& x,
 //! @param drv order of derivative.
 //! @return estimated derivative evaluated at the bin centers.
 inline Eigen::VectorXd
-KdeFFT::kde_drv(size_t drv) const
+KdeFFT::kde_drv(unsigned drv) const
 {
   double delta = (upper_ - lower_) / num_bins_;
   double tau = 4.0 + drv;
-  size_t L = std::floor(tau * bandwidth_ / delta);
+  size_t L = static_cast<size_t>(std::floor(tau * bandwidth_ / delta));
   L = std::min(L, num_bins_ + 1);
 
   double tmp_dbl = L * delta / bandwidth_;

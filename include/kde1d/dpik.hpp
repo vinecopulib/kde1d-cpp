@@ -25,7 +25,7 @@ public:
 
 private:
   double scale_est(const Eigen::VectorXd& x);
-  double get_bandwidth_for_bkfe(size_t drv);
+  double get_bandwidth_for_bkfe(unsigned drv);
   double ll_ibias2(size_t degree);
   double ll_ivar(size_t degree);
 
@@ -76,7 +76,7 @@ PluginBandwidthSelector::scale_est(const Eigen::VectorXd& x)
 //! only works for even drv
 //! @param drv order of the derivative in the kernel functional.
 inline double
-PluginBandwidthSelector::get_bandwidth_for_bkfe(size_t drv)
+PluginBandwidthSelector::get_bandwidth_for_bkfe(unsigned drv)
 {
   if (drv % 2 != 0) {
     throw std::invalid_argument("only even drv allowed.");
