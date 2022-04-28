@@ -28,11 +28,17 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     CHECK_NOTHROW(fit.fit(x));
   }
 
-//   fit.pdf(x);
-//   fit.cdf(x);
-//   fit.quantile(x.cwiseMax(0));
-}
+  SECTION("detect wrong arguments")
+  {
+    CHECK_THROWS(kde1d::Kde1d(-1));
+    CHECK_THROWS(kde1d::Kde1d(1, 0));
+    CHECK_THROWS(kde1d::Kde1d(1, 1, NAN, NAN, 3));
+  }
 
+  //   fit.pdf(x);
+  //   fit.cdf(x);
+  //   fit.quantile(x.cwiseMax(0));
+}
 
 TEST_CASE("discrete data", "[discrete]")
 {
