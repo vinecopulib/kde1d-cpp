@@ -9,7 +9,6 @@ Eigen::VectorXd ugrid = Eigen::VectorXd::LinSpaced(100, 0.001, 0.999);
 
 TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 {
-
   // continuous data
   Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
 
@@ -70,7 +69,7 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
   SECTION("estimates are reasonable")
   {
     x = stats::simulate_uniform(10000, { 1 });
-    auto points = Eigen::VectorXd::LinSpaced(10, 0.05, 0.95);
+    auto points = Eigen::VectorXd::LinSpaced(10, 0.1, 0.9);
     auto target = Eigen::VectorXd::Constant(10, 1.0);
 
     kde1d::Kde1d fit;
@@ -99,13 +98,220 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
   }
 }
 
-TEST_CASE("discrete data", "[discrete]")
+TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
 {
-  // discrete data
-  Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(101, -50, 50);
-  kde1d::Kde1d fit(true);
-  fit.fit(x);
-  fit.pdf(x);
-  fit.cdf(x);
-  fit.quantile(ugrid);
+  // continuous data
+  Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
+
+  SECTION("fit local constant")
+  {
+    // no boundary
+    kde1d::Kde1d fit(false, 0, NAN, 1, NAN, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local linear")
+  {
+    kde1d::Kde1d fit(false, 0, NAN, 1, NAN, 1);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local quadratic")
+  {
+    kde1d::Kde1d fit(false, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("methods work")
+  {
+    kde1d::Kde1d fit(false, 0);
+    fit.fit(x);
+    CHECK(fit.pdf(x).size() == x.size());
+    CHECK(fit.pdf(x).minCoeff() >= 0);
+
+    CHECK(fit.cdf(x).size() == x.size());
+    CHECK(fit.cdf(x).minCoeff() >= 0);
+    CHECK(fit.cdf(x).maxCoeff() <= 1);
+
+    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).minCoeff() >= -1);
+    CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
+  }
+
+  SECTION("estimates are reasonable")
+  {
+    x = stats::simulate_uniform(10000, { 1 });
+    auto points = Eigen::VectorXd::LinSpaced(10, 0.1, 0.9);
+    auto target = Eigen::VectorXd::Constant(10, 1.0);
+
+    kde1d::Kde1d fit(false, 0);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, 0, NAN, 1, NAN, 0);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, 0, NAN, 1, NAN, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+  }
+
+  SECTION("works with weights")
+  {
+    kde1d::Kde1d fit(false, 0);
+    auto w = Eigen::VectorXd::Constant(x.size(), 1);
+    fit.fit(x, w);
+
+    kde1d::Kde1d fit0(false, 0);
+    fit0.fit(x);
+
+    CHECK(fit.pdf(ugrid).isApprox(fit0.pdf(ugrid)));
+  }
 }
+
+TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
+{
+  // continuous data
+  Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
+
+  SECTION("fit local constant")
+  {
+    // no boundary
+    kde1d::Kde1d fit(false, NAN, 1, 1, NAN, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local linear")
+  {
+    kde1d::Kde1d fit(false, NAN, 1, 1, NAN, 1);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local quadratic")
+  {
+    kde1d::Kde1d fit(false, NAN, 1);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("methods work")
+  {
+    kde1d::Kde1d fit(false, NAN, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(x).size() == x.size());
+    CHECK(fit.pdf(x).minCoeff() >= 0);
+
+    CHECK(fit.cdf(x).size() == x.size());
+    CHECK(fit.cdf(x).minCoeff() >= 0);
+    CHECK(fit.cdf(x).maxCoeff() <= 1);
+
+    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).minCoeff() >= -1);
+    CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
+  }
+
+  SECTION("estimates are reasonable")
+  {
+    x = stats::simulate_uniform(10000, { 1 });
+    auto points = Eigen::VectorXd::LinSpaced(10, 0.1, 0.9);
+    auto target = Eigen::VectorXd::Constant(10, 1.0);
+
+    kde1d::Kde1d fit(false, NAN, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, NAN, 1, 1, NAN, 0);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, NAN, 1, 1, NAN, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+  }
+
+  SECTION("works with weights")
+  {
+    kde1d::Kde1d fit(false, NAN, 1);
+    auto w = Eigen::VectorXd::Constant(x.size(), 1);
+    fit.fit(x, w);
+
+    kde1d::Kde1d fit0(false, NAN, 1);
+    fit0.fit(x);
+
+    CHECK(fit.pdf(ugrid).isApprox(fit0.pdf(ugrid)));
+  }
+}
+
+TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
+{
+  // continuous data
+  Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
+
+  SECTION("fit local constant")
+  {
+    // no boundary
+    kde1d::Kde1d fit(false, 0, 1, 1, NAN, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local linear")
+  {
+    kde1d::Kde1d fit(false, 0, 1, 1, NAN, 1);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("fit local quadratic")
+  {
+    kde1d::Kde1d fit(false, 0);
+    CHECK_NOTHROW(fit.fit(x));
+  }
+
+  SECTION("methods work")
+  {
+    kde1d::Kde1d fit(false, 0, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(x).size() == x.size());
+    CHECK(fit.pdf(x).minCoeff() >= 0);
+
+    CHECK(fit.cdf(x).size() == x.size());
+    CHECK(fit.cdf(x).minCoeff() >= 0);
+    CHECK(fit.cdf(x).maxCoeff() <= 1);
+
+    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).minCoeff() >= -1);
+    CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
+  }
+
+  SECTION("estimates are reasonable")
+  {
+    x = stats::simulate_uniform(10000, { 1 });
+    auto points = Eigen::VectorXd::LinSpaced(10, 0.1, 0.9);
+    auto target = Eigen::VectorXd::Constant(10, 1.0);
+
+    kde1d::Kde1d fit(false, 0, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, 0, 1, 1, NAN, 0);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+
+    fit = kde1d::Kde1d(false, 0, 1, 1, NAN, 1);
+    fit.fit(x);
+    CHECK(fit.pdf(points).isApprox(target, 0.2));
+  }
+
+  SECTION("works with weights")
+  {
+    kde1d::Kde1d fit(false, 0, 1);
+    auto w = Eigen::VectorXd::Constant(x.size(), 1);
+    fit.fit(x, w);
+
+    kde1d::Kde1d fit0(false, 0, 1);
+    fit0.fit(x);
+
+    CHECK(fit.pdf(ugrid).isApprox(fit0.pdf(ugrid)));
+  }
+}
+
+
