@@ -74,6 +74,7 @@ private:
   static constexpr double K0_ = 0.3989425;
 
   // private methods
+  void check_fitted() const;
   void check_inputs(const Eigen::VectorXd& x,
                     const Eigen::VectorXd& weights = Eigen::VectorXd()) const;
   void fit_internal(const Eigen::VectorXd& x,
@@ -148,6 +149,11 @@ inline Kde1d::Kde1d(bool discrete,
   if (degree_ > 2) {
     throw std::invalid_argument("degree must be 0, 1 or 2");
   }
+
+  if (discrete_) {
+    xmin_ -= 0.5;
+    xmax_ += 0.5;
+  }
 }
 
 //! @param x vector of observations
@@ -199,6 +205,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   check_inputs(x);
   return !discrete_ ? pdf_continuous(x) : pdf_discrete(x);
 }
@@ -232,6 +239,7 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   check_inputs(x);
   return !discrete_ ? cdf_continuous(x) : cdf_discrete(x);
 }
@@ -245,15 +253,16 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
-  auto mx = std::lround(grid_.get_grid_max());
-  auto mn = std::lround(grid_.get_grid_min());
+  auto mx = std::ceil(grid_.get_grid_max());
+  auto mn = std::floor(grid_.get_grid_min());
   Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
   auto f_cum = pdf_discrete(lvs);
-  for (long i = 1; i <= mx; ++i)
-    f_cum(i) += f_cum(i - 1);
+  for (long i = 0; i < mx; ++i)
+    f_cum(i + 1) += f_cum(i);
 
-  return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
-    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
+  return tools::unaryExpr_or_nan(x, [&](const double& xx) {
+    auto cdf = f_cum(static_cast<size_t>(std::lround(xx - mn)));
+    return std::min(1.0, std::max(cdf, 0.0));
   });
 }
 
@@ -263,6 +272,7 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   if ((x.minCoeff() < 0) | (x.maxCoeff() > 1))
     throw std::invalid_argument("probabilities must lie in (0, 1).");
   return !discrete_ ? quantile_continuous(x) : quantile_discrete(x);
@@ -287,27 +297,29 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
-  auto mx = std::lround(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
-  auto p = cdf_discrete(lvs);
-  auto quan = [&](const double& pp) {
-    long lv = 0;
-    while ((pp >= p(lv)) && (lv < mx)) {
-      lv++;
-    }
-    return lvs(lv);
-  };
+  return quantile_continuous(x).array().round();
+  // auto mx = std::lround(grid_.get_grid_max());
+  // auto mn = std::lround(grid_.get_grid_min());
+  // Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
+  // auto p = cdf_discrete(lvs);
+  // auto quan = [&](const double& pp) {
+  //   long lv = 0;
+  //   while ((pp >= p(lv)) && (lv < mx)) {
+  //     lv++;
+  //   }
+  //   return lvs(lv);
+  // };
 
-  Eigen::VectorXd out(x.size());
-  for (long i = 0; i < x.size(); ++i) {
-    if (std::isnan(x(i))) {
-      out(i) = std::numeric_limits<double>::quiet_NaN();
-    } else {
-      out(i) = quan(x(i));
-    }
-  }
+  // Eigen::VectorXd out(x.size());
+  // for (long i = 0; i < x.size(); ++i) {
+  //   if (std::isnan(x(i))) {
+  //     out(i) = std::numeric_limits<double>::quiet_NaN();
+  //   } else {
+  //     out(i) = quan(x(i));
+  //   }
+  // }
 
-  return out;
+  // return out;
 }
 
 //! simulates data from the model.
@@ -317,6 +329,7 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::simulate(size_t n, const std::vector<int>& seeds) const
 {
+  check_fitted();
   auto u = stats::simulate_uniform(n, seeds);
   return this->quantile(u);
 }
@@ -450,7 +463,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
     if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
-      x_new = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
+      x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
@@ -465,8 +478,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
     if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
-      x_new = stats::pnorm(x).array() + xmin_ - 5e-5 * rng;
-      x_new *= (xmax_ - xmin_ + 1e-4 * rng);
+      x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
       x_new = x.array().exp() + xmin_ - 1e-5;
@@ -568,11 +580,18 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   bandwidth *= multiplier;
-  if (discrete_) {
-    bandwidth = std::max(bandwidth, 0.5 / 5);
-  }
+  // if (discrete_) {
+  //   bandwidth = std::max(bandwidth, 0.5 / 5);
+  // }
 
   return bandwidth;
+}
+
+inline void Kde1d::check_fitted() const 
+{
+  if (std::isnan(loglik_)) {
+    throw std::runtime_error("You must first fit the KDE to data.");
+  }
 }
 
 inline void
