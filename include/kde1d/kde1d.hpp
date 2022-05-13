@@ -149,6 +149,11 @@ inline Kde1d::Kde1d(bool discrete,
   if (degree_ > 2) {
     throw std::invalid_argument("degree must be 0, 1 or 2");
   }
+
+  if (discrete_) {
+    xmin_ -= 0.5;
+    xmax_ += 0.5;
+  }
 }
 
 //! @param x vector of observations
@@ -292,27 +297,29 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
-  auto mx = std::lround(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx + 1, 0, mx);
-  auto p = cdf_discrete(lvs);
-  auto quan = [&](const double& pp) {
-    long lv = 0;
-    while ((pp >= p(lv)) && (lv < mx)) {
-      lv++;
-    }
-    return lvs(lv);
-  };
+  return quantile_continuous(x).array().round();
+  // auto mx = std::lround(grid_.get_grid_max());
+  // auto mn = std::lround(grid_.get_grid_min());
+  // Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
+  // auto p = cdf_discrete(lvs);
+  // auto quan = [&](const double& pp) {
+  //   long lv = 0;
+  //   while ((pp >= p(lv)) && (lv < mx)) {
+  //     lv++;
+  //   }
+  //   return lvs(lv);
+  // };
 
-  Eigen::VectorXd out(x.size());
-  for (long i = 0; i < x.size(); ++i) {
-    if (std::isnan(x(i))) {
-      out(i) = std::numeric_limits<double>::quiet_NaN();
-    } else {
-      out(i) = quan(x(i));
-    }
-  }
+  // Eigen::VectorXd out(x.size());
+  // for (long i = 0; i < x.size(); ++i) {
+  //   if (std::isnan(x(i))) {
+  //     out(i) = std::numeric_limits<double>::quiet_NaN();
+  //   } else {
+  //     out(i) = quan(x(i));
+  //   }
+  // }
 
-  return out;
+  // return out;
 }
 
 //! simulates data from the model.
@@ -456,7 +463,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
     if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
-      x_new = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
+      x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
@@ -471,8 +478,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
     if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
-      x_new = stats::pnorm(x).array() + xmin_ - 5e-5 * rng;
-      x_new *= (xmax_ - xmin_ + 1e-4 * rng);
+      x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
       x_new = x.array().exp() + xmin_ - 1e-5;
@@ -574,9 +580,9 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   bandwidth *= multiplier;
-  if (discrete_) {
-    bandwidth = std::max(bandwidth, 0.5 / 5);
-  }
+  // if (discrete_) {
+  //   bandwidth = std::max(bandwidth, 0.5 / 5);
+  // }
 
   return bandwidth;
 }
