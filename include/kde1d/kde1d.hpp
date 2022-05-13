@@ -74,6 +74,7 @@ private:
   static constexpr double K0_ = 0.3989425;
 
   // private methods
+  void check_fitted() const;
   void check_inputs(const Eigen::VectorXd& x,
                     const Eigen::VectorXd& weights = Eigen::VectorXd()) const;
   void fit_internal(const Eigen::VectorXd& x,
@@ -199,6 +200,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   check_inputs(x);
   return !discrete_ ? pdf_continuous(x) : pdf_discrete(x);
 }
@@ -232,6 +234,7 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   check_inputs(x);
   return !discrete_ ? cdf_continuous(x) : cdf_discrete(x);
 }
@@ -264,6 +267,7 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile(const Eigen::VectorXd& x) const
 {
+  check_fitted();
   if ((x.minCoeff() < 0) | (x.maxCoeff() > 1))
     throw std::invalid_argument("probabilities must lie in (0, 1).");
   return !discrete_ ? quantile_continuous(x) : quantile_discrete(x);
@@ -318,6 +322,7 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::simulate(size_t n, const std::vector<int>& seeds) const
 {
+  check_fitted();
   auto u = stats::simulate_uniform(n, seeds);
   return this->quantile(u);
 }
@@ -574,6 +579,13 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   return bandwidth;
+}
+
+inline void Kde1d::check_fitted() const 
+{
+  if (std::isnan(loglik_)) {
+    throw std::runtime_error("You must first fit the KDE to data.");
+  }
 }
 
 inline void
