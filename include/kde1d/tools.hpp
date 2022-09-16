@@ -86,10 +86,11 @@ get_order(const Eigen::VectorXd& x)
   Eigen::VectorXi order(x.size());
   for (long i = 0; i < x.size(); ++i)
     order(i) = i;
-  std::stable_sort(
-    order.data(),
-    order.data() + order.size(),
-    [&](const size_t& a, const size_t& b) { return (x[a] < x[b]); });
+  std::stable_sort(order.data(),
+                   order.data() + order.size(),
+                   [&](const size_t& a, const size_t& b) {
+                     return std::isnan(x[a]) || (x[a] < x[b]);
+                   });
   return order;
 }
 
