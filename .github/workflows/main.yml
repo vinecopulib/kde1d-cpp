@@ -76,7 +76,7 @@ jobs:
           if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
             if [ "${{ matrix.cfg.os }}/${{ matrix.cfg.name }}" == "ubuntu-latest/GNU" ]; then
               cmake .. -DSTRICT_COMPILER=ON -DCODE_COVERAGE=ON -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
-              make kde1d-cpp_coverage
+              make kde1d_coverage
             else
               cmake .. -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
               make
