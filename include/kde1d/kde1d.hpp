@@ -43,7 +43,7 @@ public:
   double get_xmax() const { return xmax_; }
   size_t get_nlevels() const { return nlevels_; }
   double get_bandwidth() const { return bandwidth_; }
-  double get_degree() const { return degree_; }
+  size_t get_degree() const { return degree_; }
   double get_edf() const { return edf_; }
   double get_loglik() const { return loglik_; }
 
@@ -248,7 +248,8 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
   check_levels(x);
   auto fhat = pdf_continuous(x);
   // normalize
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
+  Eigen::VectorXd lvs =
+    Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
   fhat /= grid_.interpolate(lvs).sum();
 
   return fhat;
@@ -276,7 +277,8 @@ inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
   check_levels(x);
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
+  Eigen::VectorXd lvs =
+    Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
   auto f_cum = pdf(lvs);
   for (size_t i = 1; i < nlevels_; ++i)
     f_cum(i) += f_cum(i - 1);
@@ -317,7 +319,8 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
+  Eigen::VectorXd lvs =
+    Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
   auto p = cdf(lvs);
   auto quan = [&](const double& pp) {
     size_t lv = 0;
@@ -353,11 +356,11 @@ Kde1d::check_levels(const Eigen::VectorXd& x) const
     throw std::runtime_error(
       "when nlevels > 0, 'x' must only contain non-negatives  integers.");
   }
-  if (xx.maxCoeff() > nlevels_) {
+  if (xx.maxCoeff() > static_cast<double>(nlevels_ - 1)) {
     throw std::runtime_error(
       "maximum value of 'x' is" + std::to_string(xx.maxCoeff()) +
-      ", which is larger than " + std::to_string(nlevels_) +
-      " (number of factor levels).");
+      ", which is larger than " + std::to_string(nlevels_ - 1) +
+      " (number of factor levels minus 1).");
     // throw std::runtime_error("maximum value of 'x' is larger than the "
     //                          "number of factor levels.");
   }
@@ -409,7 +412,8 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
 
   Eigen::MatrixXd res(f0.size(), 2);
   res.col(0) = f0;
-  res.col(1) = K0_ / (x.size() * bandwidth_) * wbin.cwiseQuotient(f0);
+  res.col(1) =
+    K0_ / (static_cast<double>(x.size()) * bandwidth_) * wbin.cwiseQuotient(f0);
   if (degree_ == 0)
     return res;
 
@@ -477,7 +481,7 @@ Kde1d::calculate_infl(const size_t& n,
     M_inverse00 = M.inverse()(0, 0);
   }
 
-  return K0_ * weight / (n * bandwidth) * M_inverse00;
+  return K0_ * weight / (static_cast<double>(n) * bandwidth) * M_inverse00;
 }
 
 //! transformations for density estimates with bounded support.

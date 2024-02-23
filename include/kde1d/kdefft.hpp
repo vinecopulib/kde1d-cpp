@@ -70,12 +70,12 @@ KdeFFT::kde_drv(unsigned drv) const
   size_t L = static_cast<size_t>(std::floor(tau * bandwidth_ / delta));
   L = std::min(L, num_bins_ + 1);
 
-  double tmp_dbl = L * delta / bandwidth_;
+  double tmp_dbl = static_cast<double>(L) * delta / bandwidth_;
   Eigen::VectorXd arg = Eigen::VectorXd::LinSpaced(L + 1, 0.0, tmp_dbl);
   tmp_dbl = std::pow(bandwidth_, drv + 1.0);
   arg = stats::dnorm_drv(arg, drv) / (tmp_dbl * bin_counts_.sum());
 
-  tmp_dbl = num_bins_ + L + 2.0;
+  tmp_dbl = static_cast<double>(num_bins_ + L) + 2.0;
   tmp_dbl = std::pow(2, std::ceil(std::log(tmp_dbl) / std::log(2)));
   size_t P = static_cast<size_t>(tmp_dbl);
 

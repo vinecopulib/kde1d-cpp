@@ -60,8 +60,8 @@ PluginBandwidthSelector::scale_est(const Eigen::VectorXd& x)
 {
   double m_x = x.cwiseProduct(weights_).mean();
   Eigen::VectorXd sx = (x - Eigen::VectorXd::Constant(x.size(), m_x));
-  double sd_x =
-    std::sqrt(sx.cwiseAbs2().cwiseProduct(weights_).sum() / (x.size() - 1));
+  double sd_x = std::sqrt(sx.cwiseAbs2().cwiseProduct(weights_).sum() /
+                          (static_cast<double>(x.size()) - 1));
   Eigen::VectorXd q_x(2);
   q_x << 0.25, 0.75;
   q_x = stats::quantile(x, q_x, weights_);
