@@ -1,15 +1,15 @@
 if(NOT WIN32)
 
     if(STRICT_COMPILER AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-        set(CMAKE_CXX_FLAGS                "-std=gnu++11 -Wno-delete-non-virtual-dtor -Wall -Wextra")
+      set(CMAKE_CXX_FLAGS                "-Werror -Wno-delete-non-virtual-dtor -Wall -Wextra -Wconversion")
         set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wstrict-aliasing -pedantic -fmax-errors=5 -Werror=return-type")
         set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wunreachable-code -Wcast-align -Wcast-qual")
         set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op")
         set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wmissing-include-dirs -Wnoexcept -Wold-style-cast -Woverloaded-virtual")
         set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wredundant-decls -Wshadow -Wsign-promo -Wstrict-null-sentinel")
-        set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wno-variadic-macros -Wno-parentheses -fdiagnostics-show-option")
+        set(CMAKE_CXX_FLAGS                "${CMAKE_CXX_FLAGS} -Wno-variadic-macros -Wno-parentheses  -fdiagnostics-show-option")
     else()
-        set(CMAKE_CXX_FLAGS                "-std=gnu++11 -Wextra -Wall -Wno-delete-non-virtual-dtor -Werror=return-type")
+        set(CMAKE_CXX_FLAGS                "-Wextra -Wall -Wno-delete-non-virtual-dtor -Werror=return-type")
     endif()
 
     set(CMAKE_CXX_FLAGS_DEBUG          "-g -O0 -DDEBUG ")
@@ -35,8 +35,12 @@ if(NOT WIN32)
         endif()
 
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-register") # -Qunused-arguments
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-const-variable -Wno-unused-parameter")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-const-variable ")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 14.0)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wc++17-attribute-extensions")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wbitwise-instead-of-logical")
+        endif ()
     endif()
 endif()
 
