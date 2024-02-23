@@ -23,7 +23,7 @@ dnorm(const Eigen::MatrixXd& x)
   boost::math::normal dist;
   return x.unaryExpr(
     [&dist](const double& y) { return boost::math::pdf(dist, y); });
-};
+}
 
 //! standard normal density
 //! @param x evaluation points.
@@ -43,7 +43,7 @@ dnorm_drv(const Eigen::MatrixXd& x, unsigned drv)
       res = -res;
     return res;
   });
-};
+}
 
 //! standard normal cdf
 //! @param x evaluation points.
@@ -54,7 +54,7 @@ pnorm(const Eigen::MatrixXd& x)
   boost::math::normal dist;
   return x.unaryExpr(
     [&dist](const double& y) { return boost::math::cdf(dist, y); });
-};
+}
 
 //! standard normal quantiles
 //! @param x evaluation points.
@@ -65,7 +65,7 @@ qnorm(const Eigen::MatrixXd& x)
   boost::math::normal dist;
   return x.unaryExpr(
     [&dist](const double& y) { return boost::math::quantile(dist, y); });
-};
+}
 
 //! empirical quantiles
 //! @param x data.
@@ -87,7 +87,7 @@ quantile(const Eigen::VectorXd& x, const Eigen::VectorXd& q)
     size_t k = static_cast<size_t>(std::floor(n * q(i)));
     double p = static_cast<double>(k) / n;
     res(i) = x2[k];
-    if (k < n)
+    if (static_cast<double>(k) < n)
       res(i) += (x2[k + 1] - x2[k]) * (q(i) - p) * n;
   }
   return res;
@@ -107,7 +107,7 @@ quantile(const Eigen::VectorXd& x,
     return quantile(x, q);
   if (w.size() != x.size())
     throw std::invalid_argument("x and w must have the same size");
-  double n = x.size();
+  size_t n = x.size();
   size_t m = q.size();
   Eigen::VectorXd res(m);
 
@@ -178,18 +178,18 @@ equi_jitter(const Eigen::VectorXd& x)
   }
   tab.conservativeResize(lev, 2);
 
-  // add deterministic, conditionally uniorm noise
+  // add deterministic, conditionally uniform noise
   Eigen::VectorXd noise = Eigen::VectorXd::Zero(n);
   size_t i = 0;
   for (long k = 0; k < tab.rows(); ++k) {
-    for (size_t cnt = 1; cnt <= tab(k, 1); ++cnt)
+    for (cnt = 1; cnt <= tab(k, 1); ++cnt)
       noise(i++) = -0.5 + cnt / (tab(k, 1) + 1.0);
     cnt = 1;
   }
   Eigen::VectorXd jtr = srt + noise;
 
   // invert the permutation to return jittered x in original order
-  for (long i = 0; i < perm.size(); ++i)
+  for (i = 0; i < static_cast<size_t>(perm.size()); ++i)
     srt(perm(i)) = jtr(i);
 
   return srt;

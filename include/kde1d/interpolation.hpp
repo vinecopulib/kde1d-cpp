@@ -39,8 +39,8 @@ private:
   double cubic_integral(const double& lower,
                         const double& upper,
                         const Eigen::VectorXd& a) const;
-  int find_cell(const double& x0) const;
-  Eigen::VectorXd find_cell_coefs(const int& k) const;
+  size_t find_cell(const double& x0) const;
+  Eigen::VectorXd find_cell_coefs(const size_t& k) const;
 
   Eigen::VectorXd grid_points_;
   Eigen::VectorXd values_;
@@ -85,7 +85,7 @@ InterpolationGrid::interpolate(const Eigen::VectorXd& x) const
 {
   Eigen::VectorXd tmp_coefs(4);
   auto interpolate_one = [&](const double& xx) {
-    int k = find_cell(xx);
+    size_t k = find_cell(xx);
     double xev =
       (xx - grid_points_(k)) / (grid_points_(k + 1) - grid_points_(k));
 
@@ -115,7 +115,7 @@ InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
   // temporaries for the loop
   Eigen::VectorXd tmp_coefs(4);
   double new_int, tmp_eps, cum_int = 0.0;
-  int k = 0, m = grid_points_.size();
+  size_t k = 0, m = grid_points_.size();
   tmp_coefs = find_cell_coefs(0);
   tmp_eps = (grid_points_(1) - grid_points_(0));
 
@@ -210,11 +210,11 @@ InterpolationGrid::cubic_integral(const double& lower,
   return cubic_indef_integral(upper, a) - cubic_indef_integral(lower, a);
 }
 
-inline int
+inline size_t
 InterpolationGrid::find_cell(const double& x0) const
 {
-  int low = 0, high = grid_points_.size() - 1;
-  int mid;
+  size_t low = 0, high = grid_points_.size() - 1;
+  size_t mid;
   while (low < high - 1) {
     mid = low + (high - low) / 2;
     if (x0 < grid_points_(mid))
@@ -230,12 +230,14 @@ InterpolationGrid::find_cell(const double& x0) const
 //!
 //! @param k the cell index.
 inline Eigen::VectorXd
-InterpolationGrid::find_cell_coefs(const int& k) const
+InterpolationGrid::find_cell_coefs(const size_t& k) const
 {
   // indices for cell and neighboring grid points
-  int k0 = std::max(k - 1, 0);
-  int k2 = k + 1;
-  int k3 = std::min(k + 2, static_cast<int>(grid_points_.size()) - 1);
+  long int k0 =
+    std::max(static_cast<long int>(k) - 1, static_cast<long int>(0));
+  long k2 = k + 1;
+  long k3 = std::min(static_cast<long int>(k + 2),
+                     static_cast<long int>(grid_points_.size() - 1));
 
   double dt0 = grid_points_(k) - grid_points_(k0);
   double dt1 = grid_points_(k2) - grid_points_(k);
