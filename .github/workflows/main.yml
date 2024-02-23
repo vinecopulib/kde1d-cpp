@@ -1,86 +1,120 @@
-name: CMake
+name: Build Status 
 
-on: 
-  push:
-  pull_request:
-  release:
+on: [push]
 
 jobs:
   build:
-    # The CMake configure and build commands are platform agnostic and should work equally
-    # well on Windows or Mac.  You can convert this to a matrix build if you need
-    # cross-platform coverage.
-    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
+      max-parallel: 6 
       matrix:
-        config:
-        - {
-            name: "Windows Latest MSVC", artifact: "Windows-MSVC.tar.xz",
-            os: windows-latest,
-            build_type: "Release", cc: "cl", cxx: "cl",
-            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          }
-        - {
-            name: "Windows Latest MinGW", artifact: "Windows-MinGW.tar.xz",
-            os: windows-latest,
-            build_type: "Release", cc: "gcc", cxx: "g++"
-          }
-        - {
-            name: "Ubuntu Latest GCC", artifact: "Linux.tar.xz",
-            os: ubuntu-latest,
-            build_type: "Debug", cc: "gcc", cxx: "g++"
-          }
-        - {
-            name: "macOS Latest Clang", artifact: "macOS.tar.xz",
-            os: macos-latest,
-            build_type: "Release", cc: "clang", cxx: "clang++"
-          }
+        cfg:
+          - { os: ubuntu-latest,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64}
+          - { os: ubuntu-latest,   name: Clang,  cc: clang, cxx: clang++, platform: x64}
+          # - { os: macos-latest,    name: GNU,    cc: gcc,   cxx: g++,     platform: x64}
+          - { os: macos-latest,    name: Clang,  cc: clang, cxx: clang++, platform: x64}
+          - { os: windows-latest,  name: VS2019, cc: cl,    cxx: cl,      platform: x32}
+          - { os: windows-latest,  name: VS2019, cc: cl,    cxx: cl,      platform: x64}
 
+    runs-on: ${{ matrix.cfg.os }}
+    name:    ${{ matrix.cfg.os }} (${{ matrix.cfg.name }}, ${{ matrix.cfg.platform }})
     steps:
-    - uses: actions/checkout@v2
-    - uses: codecov/codecov-action@v2
-
-    - name: Install other dependencies
-      run:   |
-          if [ "${{ matrix.config.os }}" == "ubuntu-latest" ]; then
+      - name: Checkout project 
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Set environment variables and path
+        run:   |
+          echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
+          echo "CCX=${{ matrix.cfg.ccx }}" >> $GITHUB_ENV
+          if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
+            echo "CMAKE_GEN_PLAT=x64" >> $GITHUB_ENV
+            echo "EIGEN3_INCLUDE_DIR=C:\projects\eigen-3.3.7" >> $GITHUB_ENV
+            echo "Boost_INCLUDE_DIR=D:\a\kde1d-cpp\kde1d-cpp" >> $GITHUB_ENV
+            echo "D:\a\kde1d-cpp\kde1d-cpp\release" >> $GITHUB_PATH
+            echo "D:\a\kde1d-cpp\kde1d-cpp\release" >> $GITHUB_PATH
+            echo "D:\a\kde1d-cpp\kde1d-cpp\release\Release" >> $GITHUB_PATH
+            if [ "${{ matrix.cfg.platform }}" == "x64" ]; then
+              echo "CMAKE_GEN_PLAT=x64" >> $GITHUB_PATH
+            else
+              echo "CMAKE_GEN_PLAT=Win32" >> $GITHUB_PATH
+            fi
+          fi
+        shell: bash
+      - name: Install other dependencies
+        run:   |
+          if [ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]; then
             sudo apt-get update
-            sudo apt-get install --no-install-recommends -y lcov libeigen3-dev libboost-all-dev
+            sudo apt-get install --no-install-recommends -y lcov libgsl0-dev libeigen3-dev libboost-all-dev
             sudo apt-get install --no-install-recommends -y --allow-unauthenticated g++ clang
             sudo apt-get autoremove
-          elif [ "${{ matrix.config.os }}" == "macos-latest" ]; then
-            brew update
-            brew install lcov eigen boost
-          elif [ "${{ matrix.config.os }}" == "windows-latest" ]; then
-            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.config.platform }}
+          elif [ "${{ matrix.cfg.os }}" == "macos-latest" ]; then
+            # rm '/usr/local/bin/gfortran'
+            # rm '/usr/local/bin/2to3'
+            # rm '/usr/local/bin/2to3-3.11'
+            # rm '/usr/local/bin/idle3'
+            # rm '/usr/local/bin/R'
+            # brew update
+            brew install lcov eigen gsl doxygen graphviz boost
+          elif [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
+            cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg.platform }}
             # choco upgrade cmake
-            choco install boost-msvc-14.1
+            choco install wget
+            wget https://github.com/vinecopulib/pyvinecopulib/raw/main/lib/boost_1_71_0.tar.gz
+            set current_dir=%CD%
+            echo %current_dir%  
+            pwd
+            echo "${Boost_INCLUDE_DIR}"
+            tar xzvf boost_1_71_0.tar.gz
+            # choco install boost-msvc-14.3
             choco install eigen
           fi
-      shell: bash
-
-    - name: Configure CMake
-      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
-      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}
-
-    - name: Build
-      # Build your program with the given configuration
-      run: cmake --build ${{github.workspace}}/build --config ${{matrix.config.build_type}}
-
-    - name: Test
-      working-directory: ${{github.workspace}}/build
-      # Execute tests defined by the CMake configuration.  
-      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      if: runner.os == 'Windows'
-      run: "bin/Release/test.exe"
-      shell: bash
-
-    - name: Test
-      working-directory: ${{github.workspace}}/build
-      # Execute tests defined by the CMake configuration.  
-      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      if: runner.os != 'Windows'
-      run: ./bin/test
+        shell: bash
+      - name: Compile the debug version
+        run:   |
+          mkdir debug && cd debug
+          if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
+            if [ "${{ matrix.cfg.os }}/${{ matrix.cfg.name }}" == "ubuntu-latest/GNU" ]; then
+              cmake .. -DSTRICT_COMPILER=ON -DCODE_COVERAGE=ON -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
+              make kde1d-cpp_coverage
+            else
+              cmake .. -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
+              make
+            fi
+          else
+            cmake .. -DCMAKE_GENERATOR_PLATFORM="${CMAKE_GEN_PLAT}" -DCMAKE_INSTALL_PREFIX="C:\\projects\\kde1d-cpp-debug" -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" -DBoost_INCLUDE_DIR="${Boost_INCLUDE_DIR}" 
+            cmake --build . --config Debug
+          fi
+        shell: bash
+      - name: Code coverage
+        uses: codecov/codecov-action@v3
+        if: contains(matrix.cfg.os, 'ubuntu') && contains(matrix.cfg.name, 'GNU')
+        with:
+          token: ${{secrets.CODECOV_TOKEN}}
+          file: debug/coverage.info 
+      - name: Compile and test the release version
+        run:   |
+          mkdir release && cd release
+          if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
+            cmake .. -DCMAKE_BUILD_TYPE=Release && make && sudo make install
+            bin/test
+          else
+            cmake .. -DCMAKE_GENERATOR_PLATFORM="${CMAKE_GEN_PLAT}" -DCMAKE_INSTALL_PREFIX="C:\\projects\\kde1d-cpp-release" -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" -DBoost_INCLUDE_DIR="${Boost_INCLUDE_DIR}"
+            cmake --build . --config Release
+            "bin/Release/test.exe"
+            cmake --build . --config Release --target install
+          fi
+        shell: bash        
+      # - name: Install the release version and test the install
+      #   run:   |
+      #     cd examples/TODO
+      #     mkdir build && cd build
+      #     if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
+      #       cmake .. && make
+      #       ../bin/main
+      #     else
+      #       cmake .. -DCMAKE_GENERATOR_PLATFORM="${CMAKE_GEN_PLAT}" -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}"  -DBoost_INCLUDE_DIR="${Boost_INCLUDE_DIR}" -DCMAKE_PREFIX_PATH="C:\\projects\\kde1d-cpp-release;${WDM_CMAKE_DIR}" 
+      #       cmake --build . --config Release
+      #       "../bin/Release/main.exe"
+      #     fi
+      #   shell: bash
