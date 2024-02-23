@@ -1,0 +1,9 @@
+/** @page overview Overview
+
+- [Continuous distributions](overview-continuous.html)
+- [Discrete distributions](overview-discrete.html)
+
+In all examples, it is assumed that
+`using namespace kde1d;` is used.
+
+*/
