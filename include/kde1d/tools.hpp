@@ -88,7 +88,7 @@ get_order(const Eigen::VectorXd& x)
 {
   Eigen::VectorXi order(x.size());
   for (long i = 0; i < x.size(); ++i)
-    order(i) = i;
+    order(i) = static_cast<int>(i);
   std::stable_sort(order.data(),
                    order.data() + order.size(),
                    [&](const size_t& a, const size_t& b) {
@@ -108,13 +108,13 @@ linbin(const Eigen::VectorXd& x,
        const Eigen::VectorXd& weights)
 {
   Eigen::VectorXd gcnts = Eigen::VectorXd::Zero(num_bins + 1);
-  double delta = (upper - lower) / num_bins;
+  double delta = (upper - lower) / static_cast<double>(num_bins);
   double rem, lxi;
   size_t li;
   for (long i = 0; i < x.size(); ++i) {
     lxi = (x(i) - lower) / delta;
     li = static_cast<size_t>(lxi);
-    rem = lxi - li;
+    rem = lxi - static_cast<double>(li);
     if (li < num_bins) {
       gcnts(li) += (1 - rem) * weights(i);
       gcnts(li + 1) += rem * weights(i);
