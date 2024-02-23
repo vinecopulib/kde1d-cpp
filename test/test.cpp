@@ -373,5 +373,7 @@ TEST_CASE("discrete data", "[discrete]")
     fit0.fit(x);
 
     CHECK(fit.pdf(x).isApprox(fit0.pdf(x)));
+    CHECK(fit.cdf(x).isApprox(fit0.cdf(x)));
+    CHECK(fit.quantile(ugrid).isApprox(fit0.quantile(ugrid)));
   }
 }

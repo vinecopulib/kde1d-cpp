@@ -620,7 +620,8 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   return bandwidth;
 }
 
-inline void Kde1d::check_fitted() const 
+inline void
+Kde1d::check_fitted() const
 {
   if (std::isnan(loglik_)) {
     throw std::runtime_error("You must first fit the KDE to data.");
