@@ -236,7 +236,8 @@ InterpolationGrid::find_cell_coefs(const size_t& k) const
   long int k0 =
     std::max(static_cast<long int>(k) - 1, static_cast<long int>(0));
   long k2 = k + 1;
-  long k3 = std::min(static_cast<long int>(k) + 2, grid_points_.size() - 1);
+  long k3 = std::min(static_cast<long int>(k + 2),
+                     static_cast<long int>(grid_points_.size() - 1));
 
   double dt0 = grid_points_(k) - grid_points_(k0);
   double dt1 = grid_points_(k2) - grid_points_(k);
