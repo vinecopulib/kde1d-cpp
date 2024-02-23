@@ -30,10 +30,15 @@ public:
            const Eigen::VectorXd& weights = Eigen::VectorXd());
 
   // statistical functions
-  Eigen::VectorXd pdf(const Eigen::VectorXd& x) const;
-  Eigen::VectorXd cdf(const Eigen::VectorXd& x) const;
-  Eigen::VectorXd quantile(const Eigen::VectorXd& x) const;
-  Eigen::VectorXd simulate(size_t n, const std::vector<int>& seeds = {}) const;
+  Eigen::VectorXd pdf(const Eigen::VectorXd& x,
+                      const bool& check_fitted = true) const;
+  Eigen::VectorXd cdf(const Eigen::VectorXd& x,
+                      const bool& check_fitted = true) const;
+  Eigen::VectorXd quantile(const Eigen::VectorXd& x,
+                           const bool& check_fitted = true) const;
+  Eigen::VectorXd simulate(size_t n,
+                           const std::vector<int>& seeds = {},
+                           const bool& check_fitted = true) const;
 
   // getters
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
@@ -223,11 +228,14 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 
 //! computes the pdf of the kernel density estimate by interpolation.
 //! @param x vector of evaluation points.
+//! @param check_fitted an optional logical to bypass the check.
 //! @return a vector of pdf values.
 inline Eigen::VectorXd
-Kde1d::pdf(const Eigen::VectorXd& x) const
+Kde1d::pdf(const Eigen::VectorXd& x, const bool& check_fitted) const
 {
-  check_fitted();
+  if (check_fitted == true) {
+    this->check_fitted();
+  }
   check_inputs(x);
   return (nlevels_ == 0) ? pdf_continuous(x) : pdf_discrete(x);
 }
@@ -258,11 +266,14 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 //! computes the cdf of the kernel density estimate by numerical
 //! integration.
 //! @param x vector of evaluation points.
+//! @param check_fitted an optional logical to bypass the check.
 //! @return a vector of cdf values.
 inline Eigen::VectorXd
-Kde1d::cdf(const Eigen::VectorXd& x) const
+Kde1d::cdf(const Eigen::VectorXd& x, const bool& check_fitted) const
 {
-  check_fitted();
+  if (check_fitted == true) {
+    this->check_fitted();
+  }
   check_inputs(x);
   return (nlevels_ == 0) ? cdf_continuous(x) : cdf_discrete(x);
 }
@@ -279,7 +290,7 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
   check_levels(x);
   Eigen::VectorXd lvs =
     Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
-  auto f_cum = pdf(lvs);
+  auto f_cum = pdf_discrete(lvs);
   for (size_t i = 1; i < nlevels_; ++i)
     f_cum(i) += f_cum(i - 1);
 
@@ -290,11 +301,14 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 
 //! computes the cdf of the kernel density estimate by numerical inversion.
 //! @param x vector of evaluation points.
+//! @param check_fitted an optional logical to bypass the check.
 //! @return a vector of quantiles.
 inline Eigen::VectorXd
-Kde1d::quantile(const Eigen::VectorXd& x) const
+Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
 {
-  check_fitted();
+  if (check_fitted == true) {
+    this->check_fitted();
+  }
   if ((x.minCoeff() < 0) || (x.maxCoeff() > 1))
     throw std::invalid_argument("probabilities must lie in (0, 1).");
   return (nlevels_ == 0) ? quantile_continuous(x) : quantile_discrete(x);
@@ -321,7 +335,7 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
   Eigen::VectorXd lvs =
     Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
-  auto p = cdf(lvs);
+  auto p = cdf_discrete(lvs);
   auto quan = [&](const double& pp) {
     size_t lv = 0;
     while ((pp >= p(lv)) && (lv < nlevels_ - 1))
@@ -335,11 +349,16 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 //! simulates data from the model.
 //! @param n the number of observations to simulate.
 //! @param seeds an optional vector of seeds.
+//! @param check_fitted an optional logical to bypass the check.
 //! @return simulated observations from the kernel density.
 inline Eigen::VectorXd
-Kde1d::simulate(size_t n, const std::vector<int>& seeds) const
+Kde1d::simulate(size_t n,
+                const std::vector<int>& seeds,
+                const bool& check_fitted) const
 {
-  check_fitted();
+  if (check_fitted == true) {
+    this->check_fitted();
+  }
   auto u = stats::simulate_uniform(n, seeds);
   return this->quantile(u);
 }
