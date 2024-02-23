@@ -59,6 +59,9 @@ invert_f(const Eigen::VectorXd& x,
 inline void
 remove_nans(Eigen::VectorXd& x, Eigen::VectorXd& weights)
 {
+  if ((weights.size() > 0) && (weights.size() != x.rows()))
+    throw std::runtime_error("sizes of x and weights don't match.");
+
   // if an entry is nan or weight is zero, move it to the end
   size_t last = x.size() - 1;
   for (size_t i = 0; i < last + 1; i++) {
@@ -86,10 +89,11 @@ get_order(const Eigen::VectorXd& x)
   Eigen::VectorXi order(x.size());
   for (long i = 0; i < x.size(); ++i)
     order(i) = i;
-  std::stable_sort(
-    order.data(),
-    order.data() + order.size(),
-    [&](const size_t& a, const size_t& b) { return (x[a] < x[b]); });
+  std::stable_sort(order.data(),
+                   order.data() + order.size(),
+                   [&](const size_t& a, const size_t& b) {
+                     return std::isnan(x[a]) || (x[a] < x[b]);
+                   });
   return order;
 }
 

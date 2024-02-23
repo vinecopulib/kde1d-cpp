@@ -14,7 +14,7 @@ class Kde1d
 {
 public:
   // constructors
-  Kde1d(bool discrete = false,
+  Kde1d(size_t nlevels = 0,
         double xmin = NAN,
         double xmax = NAN,
         double multiplier = 1.0,
@@ -22,6 +22,7 @@ public:
         size_t degree = 2);
 
   Kde1d(const interp::InterpolationGrid& grid,
+        size_t nlevels = 0,
         double xmin = NAN,
         double xmax = NAN);
 
@@ -37,10 +38,10 @@ public:
   // getters
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
-  double get_discrete() const { return discrete_; }
   double get_xmin() const { return xmin_; }
   double get_multiplier() const { return multiplier_; }
   double get_xmax() const { return xmax_; }
+  size_t get_nlevels() const { return nlevels_; }
   double get_bandwidth() const { return bandwidth_; }
   double get_degree() const { return degree_; }
   double get_edf() const { return edf_; }
@@ -62,13 +63,13 @@ protected:
 
 private:
   // data members
-  bool discrete_;
+  interp::InterpolationGrid grid_;
+  size_t nlevels_;
   double xmin_;
   double xmax_;
   double multiplier_;
   double bandwidth_;
   size_t degree_;
-  interp::InterpolationGrid grid_;
   double loglik_{ NAN };
   double edf_{ NAN };
   static constexpr double K0_ = 0.3989425;
@@ -86,6 +87,7 @@ private:
   Eigen::VectorXd cdf_discrete(const Eigen::VectorXd& x) const;
   Eigen::VectorXd quantile_discrete(const Eigen::VectorXd& x) const;
 
+  void check_levels(const Eigen::VectorXd& x) const;
   Eigen::VectorXd kern_gauss(const Eigen::VectorXd& x);
   Eigen::MatrixXd fit_lp(const Eigen::VectorXd& x,
                          const Eigen::VectorXd& grid,
@@ -110,8 +112,8 @@ private:
 };
 
 //! constructor for fitting the density estimate.
-//! @param discrete whether the support of the distribution is discrete or
-//! continuous.
+//! @param nlevels number of levels for a discrete distribution (0 means a
+//! continuous distribution).
 //! @param xmin lower bound for the support of the density, `NaN` means no
 //!   boundary.
 //! @param xmax upper bound for the support of the density, `NaN` means no
@@ -120,23 +122,19 @@ private:
 //! @param bandwidth positive bandwidth parameter (NaN means automatic
 //! selection).
 //! @param degree degree of the local polynomial.
-inline Kde1d::Kde1d(bool discrete,
+inline Kde1d::Kde1d(size_t nlevels,
                     double xmin,
                     double xmax,
                     double multiplier,
                     double bandwidth,
                     size_t degree)
-  : discrete_(discrete)
+  : nlevels_(nlevels)
   , xmin_(xmin)
   , xmax_(xmax)
   , multiplier_(multiplier)
   , bandwidth_(bandwidth)
   , degree_(degree)
 {
-  // if (discrete_ && (!std::isnan(xmin_) || !std::isnan(xmax_))) {
-  //   throw std::invalid_argument("xmin and xmax can"
-  //                               " only be NaN for discrete distributions");
-  // }
   if (!std::isnan(xmin) && !std::isnan(xmax) && (xmin > xmax)) {
     throw std::invalid_argument("xmin must be smaller than xmax");
   }
@@ -149,10 +147,34 @@ inline Kde1d::Kde1d(bool discrete,
   if (degree_ > 2) {
     throw std::invalid_argument("degree must be 0, 1 or 2");
   }
+  if (nlevels_ > 0) {
+    xmin_ = NAN;
+    xmax_ = NAN;
+  }
+}
 
-  if (discrete_) {
-    xmin_ -= 0.5;
-    xmax_ += 0.5;
+//! construct model from an already fit interpolation grid.
+//! @param grid the interpolation grid.
+//! @param nlevels number of factor levels; 0 for continuous variables.
+//! @param xmin lower bound for the support of the density, `NaN` means no
+//!   boundary.
+//! @param xmax upper bound for the support of the density, `NaN` means no
+//!   boundary.
+inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
+                    size_t nlevels,
+                    double xmin,
+                    double xmax)
+  : grid_(grid)
+  , nlevels_(nlevels)
+  , xmin_(xmin)
+  , xmax_(xmax)
+{
+  if (!std::isnan(xmin) && !std::isnan(xmax) && (xmin > xmax)) {
+    throw std::invalid_argument("xmin must be smaller than xmax");
+  }
+  if (nlevels_ > 0) {
+    xmin_ = NAN;
+    xmax_ = NAN;
   }
 }
 
@@ -169,7 +191,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   tools::remove_nans(xx, w);
   if (w.size() > 0)
     w /= w.mean();
-  if (discrete_)
+  if (nlevels_ > 0)
     xx = stats::equi_jitter(xx);
   xx = boundary_transform(xx);
 
@@ -207,7 +229,7 @@ Kde1d::pdf(const Eigen::VectorXd& x) const
 {
   check_fitted();
   check_inputs(x);
-  return !discrete_ ? pdf_continuous(x) : pdf_discrete(x);
+  return (nlevels_ == 0) ? pdf_continuous(x) : pdf_discrete(x);
 }
 
 inline Eigen::VectorXd
@@ -222,11 +244,11 @@ Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 {
+
+  check_levels(x);
   auto fhat = pdf_continuous(x);
   // normalize
-  auto mx = std::lround(grid_.get_grid_max());
-  auto mn = std::lround(grid_.get_grid_min());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
   fhat /= grid_.interpolate(lvs).sum();
 
   return fhat;
@@ -241,7 +263,7 @@ Kde1d::cdf(const Eigen::VectorXd& x) const
 {
   check_fitted();
   check_inputs(x);
-  return !discrete_ ? cdf_continuous(x) : cdf_discrete(x);
+  return (nlevels_ == 0) ? cdf_continuous(x) : cdf_discrete(x);
 }
 
 inline Eigen::VectorXd
@@ -253,16 +275,14 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
-  auto mx = std::ceil(grid_.get_grid_max());
-  auto mn = std::floor(grid_.get_grid_min());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
-  auto f_cum = pdf_discrete(lvs);
-  for (long i = 0; i < mx; ++i)
-    f_cum(i + 1) += f_cum(i);
+  check_levels(x);
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
+  auto f_cum = pdf(lvs);
+  for (size_t i = 1; i < nlevels_; ++i)
+    f_cum(i) += f_cum(i - 1);
 
-  return tools::unaryExpr_or_nan(x, [&](const double& xx) {
-    auto cdf = f_cum(static_cast<size_t>(std::lround(xx - mn)));
-    return std::min(1.0, std::max(cdf, 0.0));
+  return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
+    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
   });
 }
 
@@ -273,9 +293,9 @@ inline Eigen::VectorXd
 Kde1d::quantile(const Eigen::VectorXd& x) const
 {
   check_fitted();
-  if ((x.minCoeff() < 0) | (x.maxCoeff() > 1))
+  if ((x.minCoeff() < 0) || (x.maxCoeff() > 1))
     throw std::invalid_argument("probabilities must lie in (0, 1).");
-  return !discrete_ ? quantile_continuous(x) : quantile_discrete(x);
+  return (nlevels_ == 0) ? quantile_continuous(x) : quantile_discrete(x);
 }
 
 inline Eigen::VectorXd
@@ -297,29 +317,16 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
-  return quantile_continuous(x).array().round();
-  // auto mx = std::lround(grid_.get_grid_max());
-  // auto mn = std::lround(grid_.get_grid_min());
-  // Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(mx - mn + 1, mn, mx);
-  // auto p = cdf_discrete(lvs);
-  // auto quan = [&](const double& pp) {
-  //   long lv = 0;
-  //   while ((pp >= p(lv)) && (lv < mx)) {
-  //     lv++;
-  //   }
-  //   return lvs(lv);
-  // };
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, nlevels_ - 1);
+  auto p = cdf(lvs);
+  auto quan = [&](const double& pp) {
+    size_t lv = 0;
+    while ((pp >= p(lv)) && (lv < nlevels_ - 1))
+      lv++;
+    return lvs(lv);
+  };
 
-  // Eigen::VectorXd out(x.size());
-  // for (long i = 0; i < x.size(); ++i) {
-  //   if (std::isnan(x(i))) {
-  //     out(i) = std::numeric_limits<double>::quiet_NaN();
-  //   } else {
-  //     out(i) = quan(x(i));
-  //   }
-  // }
-
-  // return out;
+  return tools::unaryExpr_or_nan(x, quan);
 }
 
 //! simulates data from the model.
@@ -332,6 +339,28 @@ Kde1d::simulate(size_t n, const std::vector<int>& seeds) const
   check_fitted();
   auto u = stats::simulate_uniform(n, seeds);
   return this->quantile(u);
+}
+
+inline void
+Kde1d::check_levels(const Eigen::VectorXd& x) const
+{
+  auto xx = x;
+  auto w = Eigen::VectorXd();
+  tools::remove_nans(xx, w);
+  if (nlevels_ == 0)
+    return;
+  if ((xx.array() != xx.array().round()).any() || (xx.minCoeff() < 0)) {
+    throw std::runtime_error(
+      "when nlevels > 0, 'x' must only contain non-negatives  integers.");
+  }
+  if (xx.maxCoeff() > nlevels_) {
+    throw std::runtime_error(
+      "maximum value of 'x' is" + std::to_string(xx.maxCoeff()) +
+      ", which is larger than " + std::to_string(nlevels_) +
+      " (number of factor levels).");
+    // throw std::runtime_error("maximum value of 'x' is larger than the "
+    //                          "number of factor levels.");
+  }
 }
 
 //! Gaussian kernel (truncated at +/- 5).
@@ -580,9 +609,9 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   bandwidth *= multiplier;
-  // if (discrete_) {
-  //   bandwidth = std::max(bandwidth, 0.5 / 5);
-  // }
+  if (nlevels_ > 0) {
+    bandwidth = std::max(bandwidth, 0.5 / 5);
+  }
 
   return bandwidth;
 }

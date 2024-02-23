@@ -317,11 +317,12 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
 TEST_CASE("discrete data", "[discrete]")
 {
   // discrete data
-  Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(101, -50, 50);
+  size_t nlevels = 50;
+  Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(nlevels + 1, 0, nlevels);
 
   SECTION("methods work")
   {
-    kde1d::Kde1d fit(true, -50, 50);
+    kde1d::Kde1d fit(nlevels, 0, nlevels);
     fit.fit(x);
     CHECK(fit.pdf(x).size() == x.size());
     CHECK(fit.pdf(x).minCoeff() >= 0);
@@ -331,8 +332,8 @@ TEST_CASE("discrete data", "[discrete]")
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
     CHECK(fit.quantile(ugrid).size() == 100);
-    CHECK(fit.quantile(ugrid).minCoeff() >= -50);
-    CHECK(fit.quantile(ugrid).maxCoeff() <= 50);
+    CHECK(fit.quantile(ugrid).minCoeff() >= 0);
+    CHECK(fit.quantile(ugrid).maxCoeff() <= nlevels);
     CHECK((fit.quantile(ugrid).array() - fit.quantile(ugrid).array().round())
             .abs()
             .maxCoeff() < 1e-300);
@@ -341,32 +342,34 @@ TEST_CASE("discrete data", "[discrete]")
   SECTION("estimates are reasonable")
   {
     x = stats::simulate_uniform(10000, { 1 });
-    x = ((x.array() - 0.5) * 100).round();
-    auto points = Eigen::VectorXd::LinSpaced(10, 0.1, 0.9);
-    auto target = Eigen::VectorXd::Constant(10, 0.01);
+    x = (x.array() * 50).round();
+    auto points = Eigen::VectorXd::LinSpaced(nlevels + 1, 0, nlevels);
+    auto target = Eigen::VectorXd::Constant(
+      nlevels, 1 / (static_cast<double>(nlevels) + 1.0));
 
-    kde1d::Kde1d fit(true, -50, 50);
+    kde1d::Kde1d fit(nlevels, 0, nlevels);
     fit.fit(x);
     CHECK(fit.pdf(points).isApprox(target, 0.2));
 
-    fit = kde1d::Kde1d(true, -50, 50, 1, NAN, 0);
+    fit = kde1d::Kde1d(nlevels, 0, nlevels, 1, NAN, 0);
     fit.fit(x);
     CHECK(fit.pdf(points).isApprox(target, 0.2));
 
-    fit = kde1d::Kde1d(true, -50, 50, 1, NAN, 1);
+    fit = kde1d::Kde1d(nlevels, 0, nlevels, 1, NAN, 1);
     fit.fit(x);
     CHECK(fit.pdf(points).isApprox(target, 0.2));
   }
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(true, -50, 50);
+
+    kde1d::Kde1d fit(nlevels, 0, nlevels);
     auto w = Eigen::VectorXd::Constant(x.size(), 1);
     fit.fit(x, w);
 
-    kde1d::Kde1d fit0(true, -50, 50);
+    kde1d::Kde1d fit0(nlevels, 0, nlevels);
     fit0.fit(x);
 
-    CHECK(fit.pdf(ugrid).isApprox(fit0.pdf(ugrid)));
+    CHECK(fit.pdf(x).isApprox(fit0.pdf(x)));
   }
 }
