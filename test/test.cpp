@@ -5,12 +5,12 @@
 
 using namespace kde1d;
 
-Eigen::VectorXd ugrid = Eigen::VectorXd::LinSpaced(100, 0.001, 0.999);
+Eigen::VectorXd ugrid = Eigen::VectorXd::LinSpaced(99, 0.01, 0.99);
 
 TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 {
   // continuous data
-  Eigen::VectorXd x = stats::simulate_uniform(100, { 1 });
+  Eigen::VectorXd x = stats::qnorm(stats::simulate_uniform(1000, { 1 }));
 
   SECTION("fit local constant")
   {
@@ -48,9 +48,9 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     CHECK(fit.cdf(x).minCoeff() >= 0);
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
-    CHECK(fit.quantile(ugrid).size() == 100);
-    CHECK(fit.quantile(ugrid).minCoeff() >= -1);
-    CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
+    CHECK(fit.quantile(ugrid).size() == ugrid.size());
+    CHECK(fit.quantile(ugrid).minCoeff() >= -2.5);
+    CHECK(fit.quantile(ugrid).maxCoeff() <= 2.5);
   }
 
   SECTION("methods fail if not fitted")
@@ -94,7 +94,15 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     kde1d::Kde1d fit0;
     fit0.fit(x);
 
-    CHECK(fit.pdf(ugrid).isApprox(fit0.pdf(ugrid)));
+    CHECK(fit.pdf(x).isApprox(fit0.pdf(x)));
+
+    Eigen::VectorXd w1 = Eigen::VectorXd::Constant(x.size(), 1.0);
+    w1.tail(x.size() / 2) = Eigen::VectorXd::Zero(x.size() / 2);
+
+    kde1d::Kde1d fit1;
+    fit1.fit(x, w1);
+
+    CHECK(fit1.pdf(x).isApprox(fit0.pdf(x), 0.1));
   }
 }
 
@@ -133,7 +141,7 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
     CHECK(fit.cdf(x).minCoeff() >= 0);
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
-    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).size() == ugrid.size());
     CHECK(fit.quantile(ugrid).minCoeff() >= -1);
     CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
   }
@@ -205,7 +213,7 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     CHECK(fit.cdf(x).minCoeff() >= 0);
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
-    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).size() == ugrid.size());
     CHECK(fit.quantile(ugrid).minCoeff() >= -1);
     CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
   }
@@ -277,7 +285,7 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
     CHECK(fit.cdf(x).minCoeff() >= 0);
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
-    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).size() == ugrid.size());
     CHECK(fit.quantile(ugrid).minCoeff() >= -1);
     CHECK(fit.quantile(ugrid).maxCoeff() <= 2);
   }
@@ -332,7 +340,7 @@ TEST_CASE("discrete data", "[discrete]")
     CHECK(fit.cdf(x).minCoeff() >= 0);
     CHECK(fit.cdf(x).maxCoeff() <= 1);
 
-    CHECK(fit.quantile(ugrid).size() == 100);
+    CHECK(fit.quantile(ugrid).size() == ugrid.size());
     CHECK(fit.quantile(ugrid).minCoeff() >= 0);
     CHECK(fit.quantile(ugrid).maxCoeff() < static_cast<double>(nlevels));
     CHECK((fit.quantile(ugrid).array() - fit.quantile(ugrid).array().round())
