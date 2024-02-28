@@ -161,10 +161,12 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
       CHECK(fit.pdf(x_lb).size() == n_sample);
       CHECK(fit.pdf(x_lb).minCoeff() >= 0);
       CHECK(fit.pdf(points).isApprox(target, pdf_tol));
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
 
       CHECK(fit.cdf(x_lb).size() == n_sample);
       CHECK(fit.cdf(x_lb).minCoeff() >= 0);
       CHECK(fit.cdf(x_lb).maxCoeff() <= 1);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
@@ -215,10 +217,12 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
       CHECK(fit.pdf(x_rb).size() == n_sample);
       CHECK(fit.pdf(x_rb).minCoeff() >= 0);
       CHECK(fit.pdf(points).isApprox(target, pdf_tol));
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, 1.0)).minCoeff() == 0.0);
 
       CHECK(fit.cdf(x_rb).size() == n_sample);
       CHECK(fit.cdf(x_rb).minCoeff() >= 0);
       CHECK(fit.cdf(x_rb).maxCoeff() <= 1);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, 1.0)).minCoeff() == 1.0);
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= -10.0);
@@ -269,10 +273,14 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
       CHECK(fit.pdf(x_cb).size() == n_sample);
       CHECK(fit.pdf(x_cb).minCoeff() >= 0);
       CHECK(fit.pdf(points).isApprox(target, pdf_tol));
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, 2.0)).minCoeff() == 0.0);
 
       CHECK(fit.cdf(x_cb).size() == n_sample);
       CHECK(fit.cdf(x_cb).minCoeff() >= 0);
       CHECK(fit.cdf(x_cb).maxCoeff() <= 1);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, 2.0)).minCoeff() == 1.0);
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
@@ -326,10 +334,20 @@ TEST_CASE("discrete data", "[discrete]")
       CHECK(fit.pdf(x_d).size() == n_sample);
       CHECK(fit.pdf(x_d).minCoeff() >= 0);
       CHECK(fit.pdf(points).isApprox(target, pdf_tol));
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, 0.5)).minCoeff() == 0.0);
+      CHECK(fit.pdf(Eigen::VectorXd::Constant(1, static_cast<double>(nlevels)))
+              .minCoeff() == 0.0);
 
       CHECK(fit.cdf(x_d).size() == n_sample);
       CHECK(fit.cdf(x_d).minCoeff() >= 0);
       CHECK(fit.cdf(x_d).maxCoeff() <= 1);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
+      CHECK(fit.cdf(Eigen::VectorXd::Constant(1, static_cast<double>(nlevels)))
+              .minCoeff() == 1.0);
+      CHECK((fit.cdf(points) -
+             fit.cdf(points + Eigen::VectorXd::Constant(points.size(), 0.5)))
+              .minCoeff() == 0.0);
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
