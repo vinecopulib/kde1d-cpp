@@ -96,7 +96,6 @@ private:
   Eigen::VectorXd cdf_discrete(const Eigen::VectorXd& x) const;
   Eigen::VectorXd quantile_discrete(const Eigen::VectorXd& x) const;
 
-  void check_levels(const Eigen::VectorXd& x) const;
   Eigen::VectorXd kern_gauss(const Eigen::VectorXd& x);
   Eigen::MatrixXd fit_lp(const Eigen::VectorXd& x,
                          const Eigen::VectorXd& grid,
@@ -251,12 +250,18 @@ Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 {
-
-  check_levels(x);
   auto fhat = pdf_continuous(x);
+
+  double ub = static_cast<double>(this->nlevels_) - 1;
+
+  // fhat = 0 when x < 0, x >= nlevels, or x is not an integer
+  // auto selected = x.cwiseMax(0.0).cwiseMin(ub).array().round() == x.array();
+  auto selected =
+    (x.array() >= 0) && (x.array() <= ub) && (x.array() == x.array().round());
+  fhat = fhat.array() * selected.cast<double>().array();
+
   // normalize
-  Eigen::VectorXd lvs =
-    Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels_, 0, ub);
   fhat /= grid_.interpolate(lvs).sum();
 
   return fhat;
@@ -286,15 +291,21 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
-  check_levels(x);
   Eigen::VectorXd lvs =
     Eigen::VectorXd::LinSpaced(nlevels_, 0, static_cast<double>(nlevels_ - 1));
   auto f_cum = pdf_discrete(lvs);
   for (size_t i = 1; i < nlevels_; ++i)
     f_cum(i) += f_cum(i - 1);
 
-  return tools::unaryExpr_or_nan(x, [&f_cum](const double& xx) {
-    return std::min(1.0, std::max(f_cum(static_cast<size_t>(xx)), 0.0));
+  double ub = static_cast<double>(this->nlevels_) - 1;
+  return tools::unaryExpr_or_nan(x, [ub, &f_cum](const double& xx) {
+    if (xx < 0) {
+      return 0.0;
+    } else if (xx >= ub) {
+      return 1.0;
+    } else {
+      return f_cum(static_cast<size_t>(xx));
+    };
   });
 }
 
@@ -360,28 +371,6 @@ Kde1d::simulate(size_t n,
   }
   auto u = stats::simulate_uniform(n, seeds);
   return this->quantile(u);
-}
-
-inline void
-Kde1d::check_levels(const Eigen::VectorXd& x) const
-{
-  auto xx = x;
-  auto w = Eigen::VectorXd();
-  tools::remove_nans(xx, w);
-  if (nlevels_ == 0)
-    return;
-  if ((xx.array() != xx.array().round()).any() || (xx.minCoeff() < 0)) {
-    throw std::runtime_error(
-      "when nlevels > 0, 'x' must only contain non-negatives  integers.");
-  }
-  if (xx.maxCoeff() > static_cast<double>(nlevels_ - 1)) {
-    throw std::runtime_error(
-      "maximum value of 'x' is" + std::to_string(xx.maxCoeff()) +
-      ", which is larger than " + std::to_string(nlevels_ - 1) +
-      " (number of factor levels minus 1).");
-    // throw std::runtime_error("maximum value of 'x' is larger than the "
-    //                          "number of factor levels.");
-  }
 }
 
 //! Gaussian kernel (truncated at +/- 5).
@@ -684,14 +673,6 @@ Kde1d::check_inputs(const Eigen::VectorXd& x,
 
   if ((weights.size() > 0) && (weights.size() != x.size()))
     throw std::invalid_argument("x and weights must have the same size");
-
-  if (!std::isnan(xmin_) && (x.minCoeff() < xmin_))
-    throw std::invalid_argument(
-      "all values in x must be larger than or equal to xmin");
-
-  if (!std::isnan(xmax_) && (x.maxCoeff() > xmax_))
-    throw std::invalid_argument(
-      "all values in x must be smaller than or equal to xmax");
 }
 
 void
