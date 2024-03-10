@@ -305,7 +305,8 @@ inline Eigen::VectorXd
 Kde1d::pdf_zi(const Eigen::VectorXd& x) const
 {
   return (x.array() == 0)
-    .select(Eigen::VectorXd::Constant(x.size(), prob0_), pdf_continuous(x));
+    .select(Eigen::VectorXd::Constant(x.size(), prob0_),
+            (1 - prob0_) * pdf_continuous(x).array());
 }
 
 //! computes the cdf of the kernel density estimate by numerical
