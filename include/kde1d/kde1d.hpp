@@ -17,6 +17,7 @@ public:
   Kde1d(size_t nlevels = 0,
         double xmin = NAN,
         double xmax = NAN,
+        bool zero_inflated = false,
         double multiplier = 1.0,
         double bandwidth = NAN,
         size_t degree = 2);
@@ -24,7 +25,8 @@ public:
   Kde1d(const interp::InterpolationGrid& grid,
         size_t nlevels = 0,
         double xmin = NAN,
-        double xmax = NAN);
+        double xmax = NAN,
+        double prob0_ = 0.0);
 
   void fit(const Eigen::VectorXd& x,
            const Eigen::VectorXd& weights = Eigen::VectorXd());
@@ -44,9 +46,10 @@ public:
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
   double get_xmin() const { return xmin_; }
-  double get_multiplier() const { return multiplier_; }
   double get_xmax() const { return xmax_; }
+  double get_prob0() const { return prob0_; }
   size_t get_nlevels() const { return nlevels_; }
+  double get_multiplier() const { return multiplier_; }
   double get_bandwidth() const { return bandwidth_; }
   size_t get_degree() const { return degree_; }
   double get_edf() const { return edf_; }
@@ -72,9 +75,11 @@ private:
   size_t nlevels_;
   double xmin_;
   double xmax_;
+  bool zero_inflated_;
   double multiplier_;
   double bandwidth_;
   size_t degree_;
+  double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
   static constexpr double K0_ = 0.3989425;
@@ -95,6 +100,9 @@ private:
   Eigen::VectorXd pdf_discrete(const Eigen::VectorXd& x) const;
   Eigen::VectorXd cdf_discrete(const Eigen::VectorXd& x) const;
   Eigen::VectorXd quantile_discrete(const Eigen::VectorXd& x) const;
+  Eigen::VectorXd pdf_zi(const Eigen::VectorXd& x) const;
+  Eigen::VectorXd cdf_zi(const Eigen::VectorXd& x) const;
+  Eigen::VectorXd quantile_zi(const Eigen::VectorXd& x) const;
 
   Eigen::VectorXd kern_gauss(const Eigen::VectorXd& x);
   Eigen::MatrixXd fit_lp(const Eigen::VectorXd& x,
@@ -126,6 +134,7 @@ private:
 //!   boundary.
 //! @param xmax upper bound for the support of the density, `NaN` means no
 //!   boundary.
+//! @param zero_inflated whether the distribution has a point mass at 0.
 //! @param multiplier bandwidth multiplier (default is 1.0).
 //! @param bandwidth positive bandwidth parameter (`NaN` means automatic
 //! selection).
@@ -133,12 +142,14 @@ private:
 inline Kde1d::Kde1d(size_t nlevels,
                     double xmin,
                     double xmax,
+                    bool zero_inflated,
                     double multiplier,
                     double bandwidth,
                     size_t degree)
   : nlevels_(nlevels)
   , xmin_(xmin)
   , xmax_(xmax)
+  , zero_inflated_(zero_inflated)
   , multiplier_(multiplier)
   , bandwidth_(bandwidth)
   , degree_(degree)
@@ -162,17 +173,22 @@ inline Kde1d::Kde1d(size_t nlevels,
 //!   boundary.
 //! @param xmax upper bound for the support of the density, `NaN` means no
 //!   boundary.
+//! @param prob0 point mass at 0.
 inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
                     size_t nlevels,
                     double xmin,
-                    double xmax)
+                    double xmax,
+                    double prob0)
   : grid_(grid)
   , nlevels_(nlevels)
   , xmin_(xmin)
   , xmax_(xmax)
+  , zero_inflated_(prob0 != 0.0)
+  , prob0_(prob0)
 {
-  if (!std::isnan(xmin) && !std::isnan(xmax) && (xmin > xmax)) {
-    throw std::invalid_argument("xmin must be smaller than xmax");
+  this->check_xmin_xmax(nlevels, xmin, xmax);
+  if ((prob0 < 0) | (prob0 > 1)) {
+    throw std::invalid_argument("prob0 must lie in the interval [0, 1].");
   }
   if (nlevels_ > 0) {
     xmin_ = NAN;
@@ -194,6 +210,18 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 
   if (w.size() > 0)
     w /= w.mean();
+
+  if (zero_inflated_) {
+    if (w.size() == 0) {
+      w = Eigen::VectorXd::Ones(x.size());
+    }
+    w = (x.array() == 0.0).select(Eigen::VectorXd::Zero(x.size()), w);
+    prob0_ = 1 - w.mean();
+    xx =
+      (w.array() == 0.0).select(Eigen::VectorXd::Constant(x.size(), NAN), xx);
+    tools::remove_nans(xx, w);
+  }
+
   if (nlevels_ > 0)
     xx = stats::equi_jitter(xx);
   xx = boundary_transform(xx);
@@ -235,7 +263,14 @@ Kde1d::pdf(const Eigen::VectorXd& x, const bool& check_fitted) const
     this->check_fitted();
   }
   check_inputs(x);
-  return (nlevels_ == 0) ? pdf_continuous(x) : pdf_discrete(x);
+
+  if (nlevels_ != 0) {
+    return pdf_discrete(x);
+  } else if (zero_inflated_) {
+    return pdf_zi(x);
+  } else {
+    return pdf_continuous(x);
+  }
 }
 
 inline Eigen::VectorXd
@@ -244,7 +279,6 @@ Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
   Eigen::VectorXd fhat = grid_.interpolate(x);
   auto trunc = [](const double& xx) { return std::max(xx, 0.0); };
   return tools::unaryExpr_or_nan(fhat, trunc);
-  ;
 }
 
 inline Eigen::VectorXd
@@ -267,6 +301,13 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
   return fhat;
 }
 
+inline Eigen::VectorXd
+Kde1d::pdf_zi(const Eigen::VectorXd& x) const
+{
+  return (x.array() == 0)
+    .select(Eigen::VectorXd::Constant(x.size(), prob0_), pdf_continuous(x));
+}
+
 //! computes the cdf of the kernel density estimate by numerical
 //! integration.
 //! @param x vector of evaluation points.
@@ -279,7 +320,14 @@ Kde1d::cdf(const Eigen::VectorXd& x, const bool& check_fitted) const
     this->check_fitted();
   }
   check_inputs(x);
-  return (nlevels_ == 0) ? cdf_continuous(x) : cdf_discrete(x);
+
+  if (nlevels_ != 0) {
+    return cdf_discrete(x);
+  } else if (zero_inflated_) {
+    return cdf_zi(x);
+  } else {
+    return cdf_continuous(x);
+  }
 }
 
 inline Eigen::VectorXd
@@ -309,6 +357,15 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
   });
 }
 
+inline Eigen::VectorXd
+Kde1d::cdf_zi(const Eigen::VectorXd& x) const
+{
+  Eigen::VectorXd zi =
+    (x.array() >= 0)
+      .select(Eigen::VectorXd::Ones(x.size()), Eigen::VectorXd::Zero(x.size()));
+  return prob0_ * zi + cdf_continuous(x) * (1 - prob0_);
+}
+
 //! computes the cdf of the kernel density estimate by numerical inversion.
 //! @param x vector of evaluation points.
 //! @param check_fitted an optional logical to bypass the check.
@@ -321,7 +378,14 @@ Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
   }
   if ((x.minCoeff() < 0) || (x.maxCoeff() > 1))
     throw std::invalid_argument("probabilities must lie in (0, 1).");
-  return (nlevels_ == 0) ? quantile_continuous(x) : quantile_discrete(x);
+
+  if (nlevels_ != 0) {
+    return quantile_discrete(x);
+  } else if (zero_inflated_) {
+    return quantile_zi(x);
+  } else {
+    return quantile_continuous(x);
+  }
 }
 
 inline Eigen::VectorXd
@@ -354,6 +418,23 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
   };
 
   return tools::unaryExpr_or_nan(x, quan);
+}
+
+inline Eigen::VectorXd
+Kde1d::quantile_zi(const Eigen::VectorXd& x) const
+{
+  Eigen::VectorXd qs(x.size());
+  auto p0 = this->cdf(Eigen::VectorXd::Zero(1))(0);
+  auto newx = (x.array() <= p0 - prob0_)
+                .select(x / (1 - prob0_),
+                        (x.array() - prob0_).cwiseMax(0.0) / (1 - prob0_));
+  qs = this->quantile_continuous(newx);
+  for (Eigen::Index i = 0; i < x.size(); i++) {
+    if ((x(i) > p0 - prob0_) && (x(i) <= p0)) {
+      qs(i) = 0;
+    }
+  }
+  return qs;
 }
 
 //! simulates data from the model.
