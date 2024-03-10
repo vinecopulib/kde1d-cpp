@@ -27,16 +27,11 @@ TEST_CASE("misc checks", "[input-checks][argument-checks]")
 
   SECTION("detect wrong arguments")
   {
-    CHECK_THROWS(kde1d::Kde1d(10, 1)); // xmin not meaningful for discrete data
-    CHECK_THROWS(
-      kde1d::Kde1d(10, NAN, 1)); // xmax not meaningful for discrete data
-    CHECK_THROWS(
-      kde1d::Kde1d(0, 1, 0)); // continuous distribution with xmin > xmax
-    CHECK_THROWS(
-      kde1d::Kde1d(0, NAN, NAN, false, -1.0, NAN, 0)); // negative multiplier
-    CHECK_THROWS(
-      kde1d::Kde1d(0, NAN, NAN, false, 1, -1.0, 0)); // negative bandwidth
-    CHECK_THROWS(kde1d::Kde1d(0, NAN, NAN, false, 1, NAN, 3)); // wrong degree
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "asdf")); // unknown type
+    CHECK_THROWS(kde1d::Kde1d(1, 0)); // distribution with xmin > xmax
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "c", -1.0, NAN, 0)); // negative mult
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "c", 1, -1.0, 0)); // negative bandwidth
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "c", 1, NAN, 3));  // wrong degree
   }
 
   SECTION("methods fail if not fitted")
@@ -81,7 +76,7 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, NAN, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(NAN, NAN, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_ub));
     }
   }
@@ -92,7 +87,7 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     auto target = stats::dnorm(points);
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, NAN, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(NAN, NAN, "continuous", 1, NAN, degree);
       fit.fit(x_ub);
 
       CHECK(fit.pdf(x_ub).size() == n_sample);
@@ -144,7 +139,7 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, NAN, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_lb));
     }
   }
@@ -156,7 +151,7 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
     points *= -1.0;
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, NAN, "continuous", 1, NAN, degree);
       fit.fit(x_lb);
 
       CHECK(fit.pdf(x_lb).size() == n_sample);
@@ -177,11 +172,11 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(0, 0, NAN);
+    kde1d::Kde1d fit(0, NAN, "continuous");
     auto w = Eigen::VectorXd::Constant(n_sample, 1);
     fit.fit(x_lb, w);
 
-    kde1d::Kde1d fit0(0, 0, NAN);
+    kde1d::Kde1d fit0(0, NAN, "continuous");
     fit0.fit(x_lb);
 
     CHECK(fit.pdf(x_lb).isApprox(fit0.pdf(x_lb)));
@@ -189,7 +184,7 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
     Eigen::VectorXd w1 = Eigen::VectorXd::Constant(n_sample, 1.0);
     w1.tail(n_sample / 2) *= 2.0;
 
-    kde1d::Kde1d fit1(0, 0, NAN);
+    kde1d::Kde1d fit1(0, NAN, "continuous");
     fit1.fit(x_lb, w1);
 
     CHECK(fit1.pdf(x_lb).isApprox(fit0.pdf(x_lb), pdf_tol));
@@ -201,7 +196,7 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, NAN, 0, false, 1, NAN, degree);
+      kde1d::Kde1d fit(NAN, 0, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_rb));
     }
   }
@@ -212,7 +207,7 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     Eigen::VectorXd target = points.array().exp();
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, NAN, 0, false, 1, NAN, degree);
+      kde1d::Kde1d fit(NAN, 0, "continuous", 1, NAN, degree);
       fit.fit(x_rb);
 
       CHECK(fit.pdf(x_rb).size() == n_sample);
@@ -233,11 +228,11 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(0, NAN, 0);
+    kde1d::Kde1d fit(NAN, 0, "continuous");
     auto w = Eigen::VectorXd::Constant(n_sample, 1);
     fit.fit(x_rb, w);
 
-    kde1d::Kde1d fit0(0, NAN, 0);
+    kde1d::Kde1d fit0(NAN, 0, "continuous");
     fit0.fit(x_rb);
 
     CHECK(fit.pdf(x_rb).isApprox(fit0.pdf(x_rb)));
@@ -245,7 +240,7 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     Eigen::VectorXd w1 = Eigen::VectorXd::Constant(n_sample, 1.0);
     w1.tail(n_sample / 2) *= 2.0;
 
-    kde1d::Kde1d fit1(0, NAN, 0);
+    kde1d::Kde1d fit1(NAN, 0, "continuous");
     fit1.fit(x_rb, w1);
 
     CHECK(fit1.pdf(x_rb).isApprox(fit0.pdf(x_rb), pdf_tol));
@@ -257,7 +252,7 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, 1, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, 1, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_cb));
     }
   }
@@ -268,7 +263,7 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
     auto target = Eigen::VectorXd::Constant(points.size(), 1.0);
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, 1, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, 1, "continuous", 1, NAN, degree);
       fit.fit(x_cb);
 
       CHECK(fit.pdf(x_cb).size() == n_sample);
@@ -291,11 +286,11 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(0, 0, 1);
+    kde1d::Kde1d fit(0, 1, "continuous");
     auto w = Eigen::VectorXd::Constant(n_sample, 1);
     fit.fit(x_cb, w);
 
-    kde1d::Kde1d fit0(0, 0, 1);
+    kde1d::Kde1d fit0(0, 1, "continuous");
     fit0.fit(x_cb);
 
     CHECK(fit.pdf(x_cb).isApprox(fit0.pdf(x_cb)));
@@ -303,7 +298,7 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
     Eigen::VectorXd w1 = Eigen::VectorXd::Constant(n_sample, 1.0);
     w1.tail(n_sample / 2) *= 2.0;
 
-    kde1d::Kde1d fit1(0, 0, 1);
+    kde1d::Kde1d fit1(0, 1, "continuous");
     fit1.fit(x_cb, w1);
 
     CHECK(fit1.pdf(x_cb).isApprox(fit0.pdf(x_cb), pdf_tol));
@@ -316,7 +311,7 @@ TEST_CASE("discrete data", "[discrete]")
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(nlevels, NAN, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, NAN, "discrete", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_d));
     }
   }
@@ -329,7 +324,7 @@ TEST_CASE("discrete data", "[discrete]")
       Eigen::VectorXd::Constant(nlevels, 1 / static_cast<double>(nlevels));
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(nlevels, NAN, NAN, false, 1, NAN, degree);
+      kde1d::Kde1d fit(0, nlevels - 1, "discrete", 1, NAN, degree);
       fit.fit(x_d);
 
       CHECK(fit.pdf(x_d).size() == n_sample);
@@ -361,11 +356,11 @@ TEST_CASE("discrete data", "[discrete]")
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(nlevels);
+    kde1d::Kde1d fit(NAN, NAN, "discrete");
     auto w = Eigen::VectorXd::Constant(n_sample, 1);
     fit.fit(x_d, w);
 
-    kde1d::Kde1d fit0(nlevels);
+    kde1d::Kde1d fit0(NAN, NAN, "discrete");
     fit0.fit(x_d);
 
     CHECK(fit.pdf(x_d).isApprox(fit0.pdf(x_d)));
@@ -373,7 +368,7 @@ TEST_CASE("discrete data", "[discrete]")
     Eigen::VectorXd w1 = Eigen::VectorXd::Constant(n_sample, 1.0);
     w1.tail(n_sample / 2) *= 2.0;
 
-    kde1d::Kde1d fit1(nlevels);
+    kde1d::Kde1d fit1(NAN, NAN, "discrete");
     fit1.fit(x_d, w1);
 
     CHECK(fit1.pdf(x_d).isApprox(fit0.pdf(x_d), pdf_tol));
@@ -382,13 +377,14 @@ TEST_CASE("discrete data", "[discrete]")
 
 TEST_CASE("zero-inflated data", "[zero-inflated]")
 {
+  Eigen::VectorXd x_zi = x_lb;
+  x_zi.head(n_sample / 4).setZero();
 
-  x_lb.head(std::floor(n_sample / 4)).setZero();
   SECTION("fit local constant, linear, quadratic")
   {
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, NAN, true, 1, NAN, degree);
-      CHECK_NOTHROW(fit.fit(x_lb));
+      kde1d::Kde1d fit(0, NAN, "zinfl", 1, NAN, degree);
+      CHECK_NOTHROW(fit.fit(x_zi));
     }
   }
 
@@ -402,17 +398,17 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     target(0) = 0.25;
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, 0, NAN, true, 1, NAN, degree);
-      fit.fit(x_lb);
+      kde1d::Kde1d fit(0, NAN, "zinfl", 1, NAN, degree);
+      fit.fit(x_zi);
 
-      CHECK(fit.pdf(x_lb).size() == n_sample);
-      CHECK(fit.pdf(x_lb).minCoeff() >= 0);
+      CHECK(fit.pdf(x_zi).size() == n_sample);
+      CHECK(fit.pdf(x_zi).minCoeff() >= 0);
       CHECK(fit.pdf(points).isApprox(target, pdf_tol));
       CHECK(fit.pdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
 
-      CHECK(fit.cdf(x_lb).size() == n_sample);
-      CHECK(fit.cdf(x_lb).minCoeff() >= 0);
-      CHECK(fit.cdf(x_lb).maxCoeff() <= 1);
+      CHECK(fit.cdf(x_zi).size() == n_sample);
+      CHECK(fit.cdf(x_zi).minCoeff() >= 0);
+      CHECK(fit.cdf(x_zi).maxCoeff() <= 1);
       CHECK(fit.cdf(Eigen::VectorXd::Constant(1, -1.0)).minCoeff() == 0.0);
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
@@ -423,21 +419,21 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
 
   SECTION("works with weights")
   {
-    kde1d::Kde1d fit(0, 0, NAN, true);
+    kde1d::Kde1d fit(0, NAN, "zinfl");
     auto w = Eigen::VectorXd::Constant(n_sample, 1);
-    fit.fit(x_lb, w);
+    fit.fit(x_zi, w);
 
-    kde1d::Kde1d fit0(0, 0, NAN, true);
-    fit0.fit(x_lb);
-    CHECK(fit.pdf(x_lb).isApprox(fit0.pdf(x_lb)));
+    kde1d::Kde1d fit0(0, NAN, "zinfl");
+    fit0.fit(x_zi);
+    CHECK(fit.pdf(x_zi).isApprox(fit0.pdf(x_zi)));
 
     Eigen::VectorXd w1 = Eigen::VectorXd::Constant(n_sample, 1.0);
-    for (int i = 0; i < n_sample/2; i++) {
-      w1(2 * i) *= 2; 
+    for (int i = 0; i < n_sample / 2; i++) {
+      w1(2 * i) *= 2;
     }
 
-    kde1d::Kde1d fit1(0, 0, NAN, true);
-    fit1.fit(x_lb, w1);
-    CHECK(fit1.pdf(x_lb).isApprox(fit0.pdf(x_lb), pdf_tol));
+    kde1d::Kde1d fit1(0, NAN, "zinfl");
+    fit1.fit(x_zi, w1);
+    CHECK(fit1.pdf(x_zi).isApprox(fit0.pdf(x_zi), pdf_tol));
   }
 }
