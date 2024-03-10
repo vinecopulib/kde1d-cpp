@@ -324,7 +324,7 @@ TEST_CASE("discrete data", "[discrete]")
       Eigen::VectorXd::Constant(nlevels, 1 / static_cast<double>(nlevels));
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, nlevels - 1, "discrete", 1, NAN, degree);
+      kde1d::Kde1d fit(0, static_cast<double>(nlevels - 1), "discrete", 1, NAN, degree);
       fit.fit(x_d);
 
       CHECK(fit.pdf(x_d).size() == n_sample);

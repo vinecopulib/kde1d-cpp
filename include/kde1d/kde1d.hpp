@@ -280,7 +280,8 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
   auto fhat = pdf_continuous(x);
   auto lb = std::floor(grid_.get_grid_min());
   auto ub = std::ceil(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(ub - lb + 1, lb, ub);
+  Eigen::VectorXd lvs =
+    Eigen::VectorXd::LinSpaced(static_cast<size_t>(ub - lb + 1), lb, ub);
 
   auto selected =
     (x.array() >= lb) && (x.array() <= ub) && (x.array() == x.array().round());
@@ -333,7 +334,8 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
   auto lb = std::floor(grid_.get_grid_min());
   auto ub = std::ceil(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(ub - lb + 1, lb, ub);
+  Eigen::VectorXd lvs =
+    Eigen::VectorXd::LinSpaced(static_cast<size_t>(ub - lb + 1), lb, ub);
 
   auto f_cum = pdf_discrete(lvs);
   for (Eigen::Index i = 1; i < f_cum.size(); ++i)
@@ -402,12 +404,13 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
   auto lb = std::floor(grid_.get_grid_min());
   auto ub = std::ceil(grid_.get_grid_max());
-  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(ub - lb + 1, lb, ub);
+  auto nlevels = static_cast<size_t>(ub - lb + 1);
+  Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels, lb, ub);
 
   auto p = cdf_discrete(lvs);
   auto quan = [&](const double& pp) {
     size_t lv = 0;
-    while ((pp >= p(lv)) && (lv < ub - lb))
+    while ((pp >= p(lv)) && (lv < nlevels - 1))
       lv++;
     return lvs(lv);
   };
