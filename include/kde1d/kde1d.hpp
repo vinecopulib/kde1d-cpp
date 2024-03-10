@@ -46,7 +46,7 @@ public:
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
   double get_xmin() const { return xmin_; }
   double get_xmax() const { return xmax_; }
-  std::string get_type() { return type_; }
+  std::string get_type() const { return type_; }
   double get_prob0() const { return prob0_; }
   double get_multiplier() const { return multiplier_; }
   double get_bandwidth() const { return bandwidth_; }
