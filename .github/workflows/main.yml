@@ -47,8 +47,8 @@ jobs:
           echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/ include/eigen3" >> $GITHUB_ENV
           if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
             cmd "C:\Program Files (x86)\Microsoft Visual  Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg. platform }}
-            echo "D:\a\vinecopulib\vinecopulib\release" >> $GITHUB_PATH
-            echo "D:\a\vinecopulib\vinecopulib\release\Release" >> $GITHUB_PATH
+            echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
+            echo "D:\a\vinecopulib\kde1d-cpp\release\Release" >> $GITHUB_PATH
           fi
         shell: bash
       - name: Compile the debug version
@@ -56,15 +56,18 @@ jobs:
           mkdir debug && cd debug
           if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
             if [ "${{ matrix.cfg.os }}/${{ matrix.cfg.name }}" == "ubuntu-latest/GNU" ]; then
-              cmake .. -DSTRICT_COMPILER=ON -DCODE_COVERAGE=ON -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
+              cmake .. -DSTRICT_COMPILER=ON \
+              -DCODE_COVERAGE=ON -DOPT_ASAN=OFF \
+              -DCMAKE_BUILD_TYPE=Debug
               make kde1d_coverage
             else
               cmake .. -DOPT_ASAN=OFF -DCMAKE_BUILD_TYPE=Debug
               make
             fi
           else
-            cmake .. -DCMAKE_GENERATOR_PLATFORM="${CMAKE_GEN_PLAT}" -DCMAKE_INSTALL_PREFIX="C:\\projects\\kde1d-cpp-debug" -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" -DBoost_INCLUDE_DIR="${Boost_INCLUDE_DIR}" 
-            cmake --build . --config Debug
+            cmake .. -G "Visual Studio 17 2022" -A "${CMAKE_GEN_PLAT}" \
+            -DCMAKE_BUILD_TYPE=Debug
+            cmake --build .
           fi
         shell: bash
       - name: Code coverage
@@ -80,7 +83,7 @@ jobs:
             cmake .. -DCMAKE_BUILD_TYPE=Release && make && sudo make install
             bin/test
           else
-            cmake .. -DCMAKE_GENERATOR_PLATFORM="${CMAKE_GEN_PLAT}" -DCMAKE_INSTALL_PREFIX="C:\\projects\\kde1d-cpp-release" -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" -DBoost_INCLUDE_DIR="${Boost_INCLUDE_DIR}"
+            cmake .. -G "Visual Studio 17 2022" -A "${CMAKE_GEN_PLAT}"   -DCMAKE_BUILD_TYPE=Release
             cmake --build . --config Release
             "bin/Release/test.exe"
             cmake --build . --config Release --target install
