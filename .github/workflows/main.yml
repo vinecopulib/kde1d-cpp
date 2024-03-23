@@ -20,14 +20,15 @@ jobs:
       EIGEN_VERSION: 3.4.0
 
     runs-on: ${{ matrix.cfg.os }}
-    name:    ${{ matrix.cfg.os }} (${{ matrix.cfg.name }}, ${{ matrix.cfg.platform }})    steps:
+    name:    ${{ matrix.cfg.os }} (${{ matrix.cfg.name }}, ${{ matrix.cfg.platform }})  
+    steps:
       - name: Checkout project 
         uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Install dependencies
           id: install-dependencies
-          uses: ./.github/actions/install-dependencies  
+          uses: ./.github/actions/install-dependencies
           with:
             os: ${{ matrix.cfg.os }}
             platform: ${{ matrix.cfg.platform }}
@@ -35,7 +36,6 @@ jobs:
             eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
             boost_version: ${{ env.BOOST_VERSION }}
             eigen_version: ${{ env.EIGEN_VERSION }}
-  
       - name: Set environment variables and path
         run:   |
           echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
