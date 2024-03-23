@@ -27,15 +27,15 @@ jobs:
         with:
           submodules: recursive
       - name: Install dependencies
-          id: install-dependencies
-          uses: ./.github/actions/install-dependencies
-          with:
-            os: ${{ matrix.cfg.os }}
-            platform: ${{ matrix.cfg.platform }}
-            boost_install_dir: ${{ matrix.cfg.root_install_dir }}
-            eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
-            boost_version: ${{ env.BOOST_VERSION }}
-            eigen_version: ${{ env.EIGEN_VERSION }}
+        id: install-dependencies
+        uses: ./.github/actions/install-dependencies
+        with:
+          os: ${{ matrix.cfg.os }}
+          platform: ${{ matrix.cfg.platform }}
+          boost_install_dir: ${{ matrix.cfg.root_install_dir }}
+          eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
       - name: Set environment variables and path
         run:   |
           echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
