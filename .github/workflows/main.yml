@@ -28,7 +28,7 @@ jobs:
           submodules: recursive
       - name: Install dependencies
         id: install-dependencies
-        uses: ./.github/actions/install-dependencies
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
@@ -36,6 +36,8 @@ jobs:
           eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
+          wdm: false
+
       - name: Set environment variables and path
         run:   |
           echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
