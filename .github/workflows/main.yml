@@ -28,7 +28,7 @@ jobs:
           submodules: recursive
       - name: Install dependencies
         id: install-dependencies
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies
+        uses: vinecopulib/vinecopulib@dev
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
