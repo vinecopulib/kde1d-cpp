@@ -274,11 +274,11 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 
   if (type_ == VarType::zero_inflated) {
     if (w.size() == 0)
-      w = Eigen::VectorXd::Ones(x.size());
-    w = (x.array() == 0.0).select(Eigen::VectorXd::Zero(x.size()), w);
+      w = Eigen::VectorXd::Ones(xx.size());
+    w = (xx.array() == 0.0).select(Eigen::VectorXd::Zero(xx.size()), w);
     prob0_ = 1 - w.mean();
     xx =
-      (w.array() == 0.0).select(Eigen::VectorXd::Constant(x.size(), NAN), xx);
+      (w.array() == 0.0).select(Eigen::VectorXd::Constant(xx.size(), NAN), xx);
     tools::remove_nans(xx, w);
   } else if (type_ == VarType::discrete) {
     xx = stats::equi_jitter(xx);
@@ -304,12 +304,17 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   grid_ = interp::InterpolationGrid(grid_points, values, 3);
 
   // calculate log-likelihood of final estimate
-  loglik_ = this->pdf(x, false).array().log().sum();
+  xx = boundary_transform(xx, true);
+  if (type_ == VarType::discrete) {
+    xx = xx.array().round();
+  }
+  loglik_ = (this->pdf(xx, false).array().log()).sum();
 
   // calculate effective degrees of freedom
   interp::InterpolationGrid infl_grid(
     grid_points, fitted.col(1).cwiseMin(2.0).cwiseMax(0), 0);
-  Eigen::VectorXd influences = infl_grid.interpolate(x).array() * (1 - prob0_);
+  Eigen::VectorXd influences =
+    infl_grid.interpolate(xx).array() * (1 - prob0_);
   edf_ = influences.sum() + (prob0_ > 0);
 
   // store bandwidth in standardized format
