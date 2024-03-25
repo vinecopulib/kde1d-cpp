@@ -148,6 +148,9 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     fit.fit(x_ub, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -220,6 +223,9 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
     fit.fit(x_lb, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -290,6 +296,9 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     fit.fit(x_rb, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -363,6 +372,9 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
     fit.fit(x_cb, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -447,6 +459,9 @@ TEST_CASE("discrete data", "[discrete]")
     fit.fit(x_d, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -524,5 +539,8 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     fit.fit(x_zi, w);
 
     CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+    CHECK(
+      fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }

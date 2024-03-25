@@ -313,8 +313,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // calculate effective degrees of freedom
   interp::InterpolationGrid infl_grid(
     grid_points, fitted.col(1).cwiseMin(2.0).cwiseMax(0), 0);
-  Eigen::VectorXd influences =
-    infl_grid.interpolate(xx).array() * (1 - prob0_);
+  Eigen::VectorXd influences = infl_grid.interpolate(xx).array() * (1 - prob0_);
   edf_ = influences.sum() + (prob0_ > 0);
 
   // store bandwidth in standardized format
@@ -334,14 +333,12 @@ Kde1d::pdf(const Eigen::VectorXd& x, const bool& check_fitted) const
   check_inputs(x);
 
   switch (type_) {
-    case VarType::continuous:
+    default:
       return pdf_continuous(x);
     case VarType::discrete:
       return pdf_discrete(x);
     case VarType::zero_inflated:
       return pdf_zi(x);
-    default:
-      throw std::runtime_error("unknown type");
   }
 }
 
@@ -394,14 +391,12 @@ Kde1d::cdf(const Eigen::VectorXd& x, const bool& check_fitted) const
   check_inputs(x);
 
   switch (type_) {
-    case VarType::continuous:
+    default:
       return cdf_continuous(x);
     case VarType::discrete:
       return cdf_discrete(x);
     case VarType::zero_inflated:
       return cdf_zi(x);
-    default:
-      throw std::runtime_error("unknown variable type.");
   }
 }
 
@@ -457,14 +452,12 @@ Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
     throw std::invalid_argument("probabilities must lie in (0, 1).");
 
   switch (type_) {
-    case VarType::continuous:
+    default:
       return quantile_continuous(x);
     case VarType::discrete:
       return quantile_discrete(x);
     case VarType::zero_inflated:
       return quantile_zi(x);
-    default:
-      throw std::runtime_error("unknown variable type.");
   }
 }
 
