@@ -67,6 +67,10 @@ TEST_CASE("misc checks", "[input-checks][argument-checks]")
     fit.set_xmin_xmax(NAN, NAN);
     fit.fit(x_ub);
     CHECK_THROWS(fit.set_xmin_xmax(1, 2));
+
+    // quantile throws when percentages are not in [0, 1]
+    CHECK_THROWS(fit.quantile(Eigen::VectorXd::Constant(1, 1.1)));
+    CHECK_THROWS(fit.quantile(Eigen::VectorXd::Constant(1, -0.1)));
   }
 }
 
@@ -131,6 +135,16 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
 
     CHECK(fit2.pdf(x_ub).isApprox(fit0.pdf(x_ub), pdf_tol));
   }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit;
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_ub(0) = NAN;
+    fit.fit(x_ub, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+  }
 }
 
 TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
@@ -189,6 +203,16 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
 
     CHECK(fit1.pdf(x_lb).isApprox(fit0.pdf(x_lb), pdf_tol));
   }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit(0, NAN, "continuous");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_lb(0) = NAN;
+    fit.fit(x_lb, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+  }
 }
 
 TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
@@ -244,6 +268,16 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     fit1.fit(x_rb, w1);
 
     CHECK(fit1.pdf(x_rb).isApprox(fit0.pdf(x_rb), pdf_tol));
+  }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit(NAN, 0, "continuous");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_rb(0) = NAN;
+    fit.fit(x_rb, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -303,6 +337,16 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
 
     CHECK(fit1.pdf(x_cb).isApprox(fit0.pdf(x_cb), pdf_tol));
   }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit(0, 1, "continuous");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_cb(0) = NAN;
+    fit.fit(x_cb, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
+  }
 }
 
 TEST_CASE("discrete data", "[discrete]")
@@ -324,7 +368,8 @@ TEST_CASE("discrete data", "[discrete]")
       Eigen::VectorXd::Constant(nlevels, 1 / static_cast<double>(nlevels));
 
     for (size_t degree = 0; degree < 3; degree++) {
-      kde1d::Kde1d fit(0, static_cast<double>(nlevels - 1), "discrete", 1, NAN, degree);
+      kde1d::Kde1d fit(
+        0, static_cast<double>(nlevels - 1), "discrete", 1, NAN, degree);
       fit.fit(x_d);
 
       CHECK(fit.pdf(x_d).size() == n_sample);
@@ -372,6 +417,16 @@ TEST_CASE("discrete data", "[discrete]")
     fit1.fit(x_d, w1);
 
     CHECK(fit1.pdf(x_d).isApprox(fit0.pdf(x_d), pdf_tol));
+  }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit(NAN, NAN, "discrete");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_d(0) = NAN;
+    fit.fit(x_d, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
 
@@ -435,5 +490,15 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     kde1d::Kde1d fit1(0, NAN, "zinfl");
     fit1.fit(x_zi, w1);
     CHECK(fit1.pdf(x_zi).isApprox(fit0.pdf(x_zi), pdf_tol));
+  }
+
+  SECTION("works with NaNs")
+  {
+    kde1d::Kde1d fit(NAN, NAN, "zero-inflated");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_zi(0) = NAN;
+    fit.fit(x_zi, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
 }
