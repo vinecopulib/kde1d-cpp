@@ -82,6 +82,9 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(NAN, NAN, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_ub));
+      CHECK(fit.str().find("continuous") != std::string::npos);
+      CHECK(fit.str().find("xmin=nan") != std::string::npos);
+      CHECK(fit.str().find("xmax=nan") != std::string::npos);
     }
   }
 
@@ -105,6 +108,7 @@ TEST_CASE("continuous data, unbounded", "[continuous][unbounded]")
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= -2.5);
       CHECK(fit.quantile(ugrid).maxCoeff() <= 2.5);
+      CHECK_NOTHROW(fit.simulate(10, { 1 }));
     }
   }
 
@@ -155,6 +159,9 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(0, NAN, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_lb));
+      CHECK(fit.str().find("continuous") != std::string::npos);
+      CHECK(fit.str().find("xmin=0") != std::string::npos);
+      CHECK(fit.str().find("xmax=nan") != std::string::npos);
     }
   }
 
@@ -181,6 +188,7 @@ TEST_CASE("continuous data, left boundary", "[continuous][left-boundary]")
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
       CHECK(fit.quantile(ugrid).maxCoeff() <= 10.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() >= 0.0);
     }
   }
 
@@ -222,6 +230,9 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(NAN, 0, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_rb));
+      CHECK(fit.str().find("continuous") != std::string::npos);
+      CHECK(fit.str().find("xmin=nan") != std::string::npos);
+      CHECK(fit.str().find("xmax=0") != std::string::npos);
     }
   }
 
@@ -247,6 +258,7 @@ TEST_CASE("continuous data, right boundary", "[continuous][right-boundary]")
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= -10.0);
       CHECK(fit.quantile(ugrid).maxCoeff() <= 0.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() <= 0.0);
     }
   }
 
@@ -288,6 +300,9 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(0, 1, "continuous", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_cb));
+      CHECK(fit.str().find("continuous") != std::string::npos);
+      CHECK(fit.str().find("xmin=0") != std::string::npos);
+      CHECK(fit.str().find("xmax=1") != std::string::npos);
     }
   }
 
@@ -314,7 +329,9 @@ TEST_CASE("continuous data, both boundaries", "[continuous][both-boundaries]")
 
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
-      CHECK(fit.quantile(ugrid).maxCoeff() <= 10.0);
+      CHECK(fit.quantile(ugrid).maxCoeff() <= 1.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() >= 0.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() <= 1.0);
     }
   }
 
@@ -357,6 +374,7 @@ TEST_CASE("discrete data", "[discrete]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(0, NAN, "discrete", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_d));
+      CHECK(fit.str().find("discrete") != std::string::npos);
     }
   }
 
@@ -396,6 +414,8 @@ TEST_CASE("discrete data", "[discrete]")
       CHECK((fit.quantile(ugrid).array() - fit.quantile(ugrid).array().round())
               .abs()
               .maxCoeff() < 1e-300);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() >= 0.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() < static_cast<double>(nlevels));
     }
   }
 
@@ -440,6 +460,7 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     for (size_t degree = 0; degree < 3; degree++) {
       kde1d::Kde1d fit(0, NAN, "zinfl", 1, NAN, degree);
       CHECK_NOTHROW(fit.fit(x_zi));
+      CHECK(fit.str().find("zero-inflated") != std::string::npos);
     }
   }
 
@@ -469,6 +490,9 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
       CHECK(fit.quantile(ugrid).size() == ugrid.size());
       CHECK(fit.quantile(ugrid).minCoeff() >= 0);
       CHECK(fit.quantile(ugrid).maxCoeff() <= 10.0);
+
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() >= 0.0);
+      CHECK(fit.simulate(10, { 1 }).maxCoeff() <= 10.0);
     }
   }
 
