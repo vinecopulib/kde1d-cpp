@@ -543,4 +543,18 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     CHECK(
       fit.quantile(Eigen::VectorXd::Constant(2, NAN)).array().isNaN().all());
   }
+
+  SECTION("works with only zeros")
+  {
+    kde1d::Kde1d fit(NAN, NAN, "zero-inflated");
+    auto w = Eigen::VectorXd::Constant(n_sample, 1);
+    x_zi = Eigen::VectorXd::Zero(n_sample);
+    fit.fit(x_zi, w);
+
+    CHECK(fit.pdf(Eigen::VectorXd::Constant(2, 1)).cwiseEqual(0).all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, -0.1)).cwiseEqual(0).all());
+    CHECK(fit.cdf(Eigen::VectorXd::Constant(2, 0.1)).cwiseEqual(1).all());
+    CHECK(
+      fit.quantile(stats::simulate_uniform(100, { 5 })).cwiseEqual(0).all());
+  }
 }
