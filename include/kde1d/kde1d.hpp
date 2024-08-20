@@ -208,7 +208,7 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
   , prob0_(prob0)
 {
   this->check_xmin_xmax(xmin, xmax);
-  if ((prob0 < 0) | (prob0 > 1)) {
+  if ((prob0 < 0) || (prob0 > 1)) {
     throw std::invalid_argument("prob0 must lie in the interval [0, 1].");
   }
 }
@@ -671,7 +671,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
 
   Eigen::VectorXd x_new = x;
   if (!inverse) {
-    if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
+    if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
       x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
@@ -686,7 +686,7 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       // no boundary -> no transform
     }
   } else {
-    if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
+    if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
       // two boundaries -> probit transform
       auto rng = xmax_ - xmin_;
       x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
@@ -717,7 +717,7 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
   }
 
   Eigen::VectorXd corr_term(fhat.size());
-  if (!std::isnan(xmin_) & !std::isnan(xmax_)) {
+  if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
     // two boundaries -> probit transform
     auto rng = xmax_ - xmin_;
     corr_term = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
@@ -736,7 +736,7 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
   }
 
   Eigen::VectorXd f_corr = fhat.cwiseProduct(corr_term);
-  if (std::isnan(xmin_) & !std::isnan(xmax_))
+  if (std::isnan(xmin_) && !std::isnan(xmax_))
     f_corr.reverseInPlace();
 
   return f_corr;
@@ -763,7 +763,7 @@ Kde1d::construct_grid_points(const Eigen::VectorXd& x)
 inline Eigen::VectorXd
 Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
 {
-  if (std::isnan(xmin_) & !std::isnan(xmax_))
+  if (std::isnan(xmin_) && !std::isnan(xmax_))
     grid_points.reverseInPlace();
   if (!std::isnan(xmin_))
     grid_points(0) = xmin_;
@@ -840,7 +840,7 @@ Kde1d::check_inputs(const Eigen::VectorXd& x,
 inline void
 Kde1d::check_boundaries(const Eigen::VectorXd& x) const
 {
-  if ((x.array() < xmin_).any() | (x.array() > xmax_).any()) {
+  if ((x.array() < xmin_).any() || (x.array() > xmax_).any()) {
     throw std::invalid_argument("x must be contained in [xmin, xmax].");
   }
 }
@@ -879,11 +879,11 @@ Kde1d::as_str(VarType type) const
 VarType
 Kde1d::as_enum(std::string type) const
 {
-  if ((type == "c") | (type == "cont") | (type == "continuous")) {
+  if ((type == "c") || (type == "cont") || (type == "continuous")) {
     return VarType::continuous;
-  } else if ((type == "d") | (type == "disc") | (type == "discrete")) {
+  } else if ((type == "d") || (type == "disc") || (type == "discrete")) {
     return VarType::discrete;
-  } else if ((type == "zi") | (type == "zinfl") | (type == "zero-inflated") |
+  } else if ((type == "zi") || (type == "zinfl") || (type == "zero-inflated") ||
              (type == "zero_inflated")) {
     return VarType::zero_inflated;
   } else {
