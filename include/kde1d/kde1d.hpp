@@ -270,8 +270,9 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
-  if (w.size() > 0)
+  if (w.size() > 0) {
     w /= w.mean();
+  }
 
   if (type_ == VarType::zero_inflated) {
     if (w.size() == 0)
@@ -318,6 +319,10 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   xx = boundary_transform(xx, true);
   if (type_ == VarType::discrete) {
     xx = xx.array().round();
+  }
+  
+  if (w.size() == 0) {
+    w = Eigen::VectorXd::Ones(xx.size());
   }
   loglik_ = (this->pdf(xx, false).array().log().array() * w.array()).sum();
   if (prob0_ > 0) {
@@ -587,7 +592,7 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
                                m - 1,
                                Eigen::VectorXd::Ones(x.size()));
     wbin = (count.array() == 0).select(
-      Eigen::VectorXd::Zero(m),
+      Eigen::VectorXd::Zero(count.size()),
       wcount.cwiseQuotient(count)
     );
   }
