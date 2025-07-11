@@ -321,7 +321,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   }
   loglik_ = (this->pdf(xx, false).array().log().array() * w.array()).sum();
   if (prob0_ > 0) {
-    loglik_ += x.size() * prob0_ * std::log(prob0_);
+    loglik_ += static_cast<double>(x.size()) * prob0_ * std::log(prob0_);
   }
 
   // calculate effective degrees of freedom
