@@ -583,7 +583,10 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
                                grid_points(m - 1),
                                m - 1,
                                Eigen::VectorXd::Ones(x.size()));
-    wbin = wcount.cwiseQuotient(count);
+    wbin = (count.array() == 0).select(
+      Eigen::VectorXd::Zero(m),
+      wcount.cwiseQuotient(count)
+    );
   }
 
   Eigen::MatrixXd res(f0.size(), 2);
