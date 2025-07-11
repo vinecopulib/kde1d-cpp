@@ -319,13 +319,16 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   if (type_ == VarType::discrete) {
     xx = xx.array().round();
   }
-  loglik_ = (this->pdf(xx, false).array().log()).sum();
+  loglik_ = (this->pdf(xx, false).array().log().array() * w.array()).sum();
+  if (prob0_ > 0) {
+    loglik_ += x.size() * prob0_ * std::log(prob0_);
+  }
 
   // calculate effective degrees of freedom
   interp::InterpolationGrid infl_grid(
-    grid_points, fitted.col(1).cwiseMin(3.0).cwiseMax(0), 0);
-  Eigen::VectorXd influences = infl_grid.interpolate(xx).array() * (1 - prob0_);
-  edf_ = influences.sum() + (prob0_ > 0);
+      grid_points, fitted.col(1).cwiseMin(3.0).cwiseMax(0), 0);
+  Eigen::VectorXd influences = infl_grid.interpolate(xx).array();
+  edf_ = influences.sum() + static_cast<double>(prob0_ > 0);
 
   // store bandwidth in standardized format
   bandwidth_ = bandwidth_ / multiplier_;
