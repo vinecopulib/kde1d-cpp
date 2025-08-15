@@ -814,7 +814,7 @@ Kde1d::check_xmin_xmax(const double& xmin, const double& xmax) const
 inline void
 Kde1d::check_fitted() const
 {
-  if (std::isnan(loglik_)) {
+  if (grid_.get_grid_points().size() == 0) {
     throw std::runtime_error("You must first fit the KDE to data.");
   }
 }
@@ -822,7 +822,7 @@ Kde1d::check_fitted() const
 inline void
 Kde1d::check_notfitted() const
 {
-  if (!std::isnan(loglik_)) {
+  if (grid_.get_grid_points().size() > 0) {
     throw std::runtime_error(
       "This method can't be used for already fitted objects.");
   }
