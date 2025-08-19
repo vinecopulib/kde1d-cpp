@@ -26,14 +26,16 @@ public:
         VarType type,
         double multiplier = 1.0,
         double bandwidth = NAN,
-        size_t degree = 2);
+        size_t degree = 2,
+        size_t grid_size = 400);
 
   Kde1d(double xmin = NAN,
         double xmax = NAN,
         std::string type = "continuous",
         double multiplier = 1.0,
         double bandwidth = NAN,
-        size_t degree = 2);
+        size_t degree = 2,
+        size_t grid_size = 400);
 
   Kde1d(const interp::InterpolationGrid& grid,
         double xmin,
@@ -72,6 +74,8 @@ public:
   double get_multiplier() const { return multiplier_; }
   double get_bandwidth() const { return bandwidth_; }
   size_t get_degree() const { return degree_; }
+  size_t get_grid_size() const { return grid_size_; }
+  size_t get_actual_grid_size() const { return grid_.get_grid_points().size(); }
   double get_edf() const { return edf_; }
   double get_loglik() const { return loglik_; }
   void set_xmin_xmax(double xmin = NAN, double xmax = NAN);
@@ -99,6 +103,7 @@ private:
   double multiplier_;
   double bandwidth_;
   size_t degree_;
+  size_t grid_size_;
   double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
@@ -161,18 +166,21 @@ private:
 //! @param bandwidth positive bandwidth parameter (`NaN` means automatic
 //! selection).
 //! @param degree degree of the local polynomial.
+//! @param grid_size number of grid points for the interpolation grid.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     VarType type,
                     double multiplier,
                     double bandwidth,
-                    size_t degree)
+                    size_t degree,
+                    size_t grid_size)
   : xmin_(xmin)
   , xmax_(xmax)
   , type_(type)
   , multiplier_(multiplier)
   , bandwidth_(bandwidth)
   , degree_(degree)
+  , grid_size_(grid_size)
 {
   this->check_xmin_xmax(xmin, xmax);
   if (multiplier <= 0.0) {
@@ -183,6 +191,9 @@ inline Kde1d::Kde1d(double xmin,
   }
   if (degree_ > 2) {
     throw std::invalid_argument("degree must be 0, 1 or 2");
+  }
+  if (grid_size_ < 4) {
+    throw std::invalid_argument("grid_size must be at least 4");
   }
 }
 
@@ -206,6 +217,7 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
   , xmin_(xmin)
   , xmax_(xmax)
   , type_(type)
+  , grid_size_(grid.get_grid_points().size())
   , prob0_(prob0)
 {
   this->check_xmin_xmax(xmin, xmax);
@@ -227,13 +239,21 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 //! @param bandwidth positive bandwidth parameter (`NaN` means automatic
 //! selection).
 //! @param degree degree of the local polynomial.
+//! @param grid_size number of grid points for the interpolation grid.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     std::string type,
                     double multiplier,
                     double bandwidth,
-                    size_t degree)
-  : Kde1d(xmin, xmax, this->as_enum(type), multiplier, bandwidth, degree)
+                    size_t degree,
+                    size_t grid_size)
+  : Kde1d(xmin,
+          xmax,
+          this->as_enum(type),
+          multiplier,
+          bandwidth,
+          degree,
+          grid_size)
 {
 }
 
@@ -582,7 +602,7 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
 {
   size_t m = grid_points.size();
   fft::KdeFFT kde_fft(
-    x, bandwidth_, grid_points(0), grid_points(m - 1), weights);
+    x, bandwidth_, grid_points(0), grid_points(m - 1), weights, m - 1);
   Eigen::VectorXd f0 = kde_fft.kde_drv(0);
   Eigen::VectorXd f1(f0.size()), f2(f0.size());
 
@@ -761,7 +781,7 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
 
 //! constructs a grid later used for interpolation
 //! @param x vector of observations.
-//! @return a grid of size 50.
+//! @return a grid of size 400.
 inline Eigen::VectorXd
 Kde1d::construct_grid_points(const Eigen::VectorXd& x)
 {
@@ -771,7 +791,7 @@ Kde1d::construct_grid_points(const Eigen::VectorXd& x)
     rng(0) -= 4 * bandwidth_;
     rng(1) += 4 * bandwidth_;
   }
-  auto zgrid = Eigen::VectorXd::LinSpaced(401, rng(0), rng(1));
+  auto zgrid = Eigen::VectorXd::LinSpaced(grid_size_ + 1, rng(0), rng(1));
   return boundary_transform(zgrid, true);
 }
 
