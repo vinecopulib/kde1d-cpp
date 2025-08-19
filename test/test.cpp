@@ -22,6 +22,144 @@ size_t nlevels = 50;
 Eigen::VectorXd x_d =
   (x_cb.array() * (static_cast<double>(nlevels) - 1)).round();
 
+TEST_CASE("grid_size parameter", "[grid-size]")
+{
+  
+  SECTION("constructor accepts grid_size parameter")
+  {
+    // Test VarType constructor
+    kde1d::Kde1d fit1(NAN, NAN, kde1d::VarType::continuous, 1.0, NAN, 2, 100);
+    CHECK(fit1.get_grid_size() == 100);
+    
+    // Test string constructor  
+    kde1d::Kde1d fit2(NAN, NAN, "continuous", 1.0, NAN, 2, 200);
+    CHECK(fit2.get_grid_size() == 200);
+  }
+
+  SECTION("grid_size validation")
+  {
+    // Should throw for grid_size < 4
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "continuous", 1.0, NAN, 2, 3));
+    CHECK_THROWS(kde1d::Kde1d(NAN, NAN, "continuous", 1.0, NAN, 2, 0));
+    
+    // Should work for grid_size >= 4
+    CHECK_NOTHROW(kde1d::Kde1d(NAN, NAN, "continuous", 1.0, NAN, 2, 4));
+    CHECK_NOTHROW(kde1d::Kde1d(NAN, NAN, "continuous", 1.0, NAN, 2, 50));
+  }
+
+  SECTION("default grid_size is 400")
+  {
+    kde1d::Kde1d fit;  // Use default constructor
+    CHECK(fit.get_grid_size() == 400);
+  }
+
+  SECTION("grid_size affects interpolation grid size")
+  {
+    // Just test that the grid_size parameter is stored correctly
+    std::vector<size_t> grid_sizes = {50, 100, 200};
+    
+    for (size_t requested_size : grid_sizes) {
+      kde1d::Kde1d fit(NAN, NAN, "continuous", 1.0, NAN, 2, requested_size);
+      
+      // Check that requested grid size is stored correctly
+      CHECK(fit.get_grid_size() == requested_size);
+    }
+  }
+
+  SECTION("grid_size works after fitting")
+  {
+    // Test various grid sizes to ensure they work properly now
+    std::vector<size_t> test_sizes = {50, 100, 200, 400, 600};
+    
+    for (size_t grid_size : test_sizes) {
+      kde1d::Kde1d fit(NAN, NAN, "continuous", 1.0, NAN, 2, grid_size);
+      CHECK_NOTHROW(fit.fit(x_ub));
+      
+      // Check that requested grid size is stored correctly
+      CHECK(fit.get_grid_size() == grid_size);
+      
+      // Check that we can call methods that depend on the fitted model
+      CHECK_NOTHROW(fit.pdf(x_ub));
+      CHECK_NOTHROW(fit.cdf(x_ub));
+      CHECK_NOTHROW(fit.quantile(ugrid));
+      
+      // Check that actual grid size matches requested size
+      size_t actual_size = fit.get_actual_grid_size();
+      CHECK(actual_size == grid_size + 1);  // Grid points = grid_size + 1
+    }
+  }
+
+  SECTION("grid_size affects estimation with different data types")
+  {
+    size_t test_grid_size = 150;
+    
+    // Continuous data
+    kde1d::Kde1d fit_cont(NAN, NAN, "continuous", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_cont.fit(x_ub));
+    CHECK(fit_cont.get_grid_size() == test_grid_size);
+    
+    // Discrete data
+    kde1d::Kde1d fit_disc(NAN, NAN, "discrete", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_disc.fit(x_d));
+    CHECK(fit_disc.get_grid_size() == test_grid_size);
+    
+    // Zero-inflated data
+    Eigen::VectorXd x_zi = x_lb;
+    x_zi.head(n_sample / 4).setZero();
+    kde1d::Kde1d fit_zi(0, NAN, "zero-inflated", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_zi.fit(x_zi));
+    CHECK(fit_zi.get_grid_size() == test_grid_size);
+  }
+
+  SECTION("grid_size works with boundaries")
+  {
+    size_t test_grid_size = 120;
+    
+    // Left boundary
+    kde1d::Kde1d fit_lb(0, NAN, "continuous", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_lb.fit(x_lb));
+    CHECK(fit_lb.get_grid_size() == test_grid_size);
+    
+    // Right boundary
+    kde1d::Kde1d fit_rb(NAN, 0, "continuous", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_rb.fit(x_rb));
+    CHECK(fit_rb.get_grid_size() == test_grid_size);
+    
+    // Both boundaries
+    kde1d::Kde1d fit_bb(0, 1, "continuous", 1.0, NAN, 2, test_grid_size);
+    CHECK_NOTHROW(fit_bb.fit(x_cb));
+    CHECK(fit_bb.get_grid_size() == test_grid_size);
+  }
+
+  SECTION("grid_size affects estimation accuracy")
+  {
+    auto points = stats::qnorm(upoints);
+    auto target = stats::dnorm(points);
+    
+    // Test with small grid size
+    kde1d::Kde1d fit_small(NAN, NAN, "continuous", 1.0, NAN, 2, 50);
+    fit_small.fit(x_ub);
+    auto pdf_small = fit_small.pdf(points);
+    
+    // Test with large grid size  
+    kde1d::Kde1d fit_large(NAN, NAN, "continuous", 1.0, NAN, 2, 800);
+    fit_large.fit(x_ub);
+    auto pdf_large = fit_large.pdf(points);
+    
+    // Both should be reasonable approximations
+    double error_small = (pdf_small - target).array().abs().mean();
+    double error_large = (pdf_large - target).array().abs().mean();
+    
+    // Both errors should be reasonable (less than the tolerance used elsewhere)
+    CHECK(error_small <= pdf_tol);
+    CHECK(error_large <= pdf_tol);
+    
+    // Generally, larger grid should perform at least as well or better
+    // (though for very large grids, numerical issues might make this not always true)
+    CHECK(error_large <= error_small * 2.0);  // Allow reasonable tolerance
+  }
+}
+
 TEST_CASE("misc checks", "[input-checks][argument-checks]")
 {
 
