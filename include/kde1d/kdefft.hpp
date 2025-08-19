@@ -69,7 +69,7 @@ inline KdeFFT::KdeFFT(const Eigen::VectorXd& x,
 inline Eigen::VectorXd
 KdeFFT::kde_drv(unsigned drv) const
 {
-  double delta = (upper_ - lower_) / num_bins_;
+  double delta = (upper_ - lower_) / static_cast<double>(num_bins_);
   double tau = 4.0 + drv;
   size_t L = static_cast<size_t>(std::floor(tau * bandwidth_ / delta));
   L = std::min(L, num_bins_ + 1);

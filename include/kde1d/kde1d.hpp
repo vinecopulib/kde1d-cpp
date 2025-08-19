@@ -217,14 +217,13 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
   , xmin_(xmin)
   , xmax_(xmax)
   , type_(type)
-  , prob0_(prob0)
   , grid_size_(grid.get_grid_points().size())
+  , prob0_(prob0)
 {
   this->check_xmin_xmax(xmin, xmax);
   if ((prob0 < 0) || (prob0 > 1)) {
     throw std::invalid_argument("prob0 must lie in the interval [0, 1].");
   }
-  grid_size_ = grid.get_grid_points().size();
 }
 
 //! constructor for fitting the density estimate.
