@@ -64,20 +64,45 @@ public:
                            const bool& check_fitted = true) const;
 
   // getters
+  //! @return the fitted density values on the interpolation grid.
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
+  //! @return the grid points used for interpolation (original scale).
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
+  //! @return the lower bound of the support (`NaN` if unbounded below).
   double get_xmin() const { return xmin_; }
+  //! @return the upper bound of the support (`NaN` if unbounded above).
   double get_xmax() const { return xmax_; }
+  //! @return the variable type (`continuous`, `discrete`, or `zero_inflated`).
   VarType get_type() const { return type_; }
+  //! @return the variable type as the human-readable string
+  //!   (`"continuous"`, `"discrete"`, or `"zero-inflated"`).
   std::string get_type_str() const { return this->as_str(type_); }
+  //! @return the estimated point mass at zero (only used for the
+  //!   `zero_inflated` type; `0` otherwise).
   double get_prob0() const { return prob0_; }
+  //! @return the bandwidth multiplier supplied at construction.
   double get_multiplier() const { return multiplier_; }
+  //! @return the bandwidth used to fit the density (post-multiplier;
+  //!   `NaN` until `fit()` has been called).
   double get_bandwidth() const { return bandwidth_; }
+  //! @return the polynomial degree used by the local-likelihood
+  //!   estimator (0, 1, or 2).
   size_t get_degree() const { return degree_; }
+  //! @return the requested number of grid points (the value passed
+  //!   to the constructor).
   size_t get_grid_size() const { return grid_size_; }
+  //! @return the actual number of grid points after fitting (which
+  //!   may differ slightly from `get_grid_size()` due to
+  //!   boundary-snapping in `finalize_grid()`).
   size_t get_actual_grid_size() const { return grid_.get_grid_points().size(); }
+  //! @return the effective degrees of freedom of the fitted estimator
+  //!   (the sum of the per-observation influence values).
   double get_edf() const { return edf_; }
+  //! @return the log-likelihood of the data under the fitted estimate.
   double get_loglik() const { return loglik_; }
+  //! Updates the support bounds. Only valid before `fit()` has been called.
+  //! @param xmin lower bound (`NaN` for unbounded).
+  //! @param xmax upper bound (`NaN` for unbounded).
   void set_xmin_xmax(double xmin = NAN, double xmax = NAN);
 
   std::string str() const
