@@ -302,6 +302,7 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 {
 }
 
+//! Fits the kernel density estimate to data.
 //! @param x vector of observations
 //! @param weights vector of weights for each observation (optional).
 inline void
@@ -388,7 +389,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   bandwidth_ = bandwidth_ / multiplier_;
 }
 
-//! computes the pdf of the kernel density estimate by interpolation.
+//! Computes the pdf of the kernel density estimate by interpolation.
 //! @param x vector of evaluation points.
 //! @param check_fitted an optional logical to bypass the check.
 //! @return a vector of pdf values.
@@ -445,7 +446,7 @@ Kde1d::pdf_zi(const Eigen::VectorXd& x) const
     .select(prob0_ * ones.array(), (1 - prob0_) * pdf_continuous(x).array());
 }
 
-//! computes the cdf of the kernel density estimate by numerical
+//! Computes the cdf of the kernel density estimate by numerical
 //! integration.
 //! @param x vector of evaluation points.
 //! @param check_fitted an optional logical to bypass the check.
@@ -506,8 +507,8 @@ Kde1d::cdf_zi(const Eigen::VectorXd& x) const
   return prob0_ * zi + (1 - prob0_) * (prob0_ < 1 ? cdf_continuous(x) : zeros);
 }
 
-//! computes the cdf of the kernel density estimate by numerical inversion.
-//! @param x vector of evaluation points.
+//! Computes the quantile function by numerical inversion of the cdf.
+//! @param x vector of evaluation points (probabilities in ``(0, 1)``).
 //! @param check_fitted an optional logical to bypass the check.
 //! @return a vector of quantiles.
 inline Eigen::VectorXd
@@ -581,7 +582,7 @@ Kde1d::quantile_zi(const Eigen::VectorXd& x) const
   return qs;
 }
 
-//! simulates data from the model.
+//! Simulates data from the fitted density.
 //! @param n the number of observations to simulate.
 //! @param seeds an optional vector of seeds.
 //! @param check_fitted an optional logical to bypass the check.
