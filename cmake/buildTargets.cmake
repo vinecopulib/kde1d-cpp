@@ -3,6 +3,10 @@ target_include_directories(kde1d INTERFACE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         )
+# The public headers include both <Eigen/Dense> and
+# <boost/math/distributions.hpp>, so both belong on the interface -- a consumer
+# of the installed package has no other way to learn about them.
+target_link_libraries(kde1d INTERFACE Eigen3::Eigen Boost::headers)
 
 if(BUILD_TESTING)
     set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
@@ -51,10 +55,18 @@ configure_package_config_file(
 install(TARGETS kde1d EXPORT "${targets_export_name}")
 
 
-file(GLOB_RECURSE main_hpp ${PROJECT_SOURCE_DIR}/include/kde1d.hpp)
-file(GLOB_RECURSE impl_hpp ${PROJECT_SOURCE_DIR}/include/kde1d/*.hpp)
-install(FILES ${main_hpp} DESTINATION "${include_install_dir}")
-install(FILES ${impl_hpp} DESTINATION "${include_install_dir}/kde1d")
+# Install the headers as a directory so the layout is preserved. Globbing them
+# was wrong twice over: `GLOB_RECURSE .../include/kde1d.hpp` matches both the
+# umbrella `include/kde1d.hpp` *and* `include/kde1d/kde1d.hpp`, and installing
+# that list flat put the implementation header on top of the umbrella -- so a
+# consumer including <kde1d.hpp> got the implementation, whose quoted includes
+# then resolved against the wrong directory. A glob also would not notice a
+# header added later without re-running CMake.
+install(
+        DIRECTORY "${PROJECT_SOURCE_DIR}/include/"
+        DESTINATION "${include_install_dir}"
+        FILES_MATCHING PATTERN "*.hpp"
+)
 
 
 # Config
