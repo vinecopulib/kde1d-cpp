@@ -49,7 +49,11 @@ jobs:
           # `<root_install_dir>/share/eigen3/cmake`. CMake reads
           # `CMAKE_PREFIX_PATH` from the environment, and `find_package(Eigen3
           # NO_MODULE)` takes the headers from there.
-          echo "CMAKE_PREFIX_PATH=${{ matrix.cfg.root_install_dir }}" >> $GITHUB_ENV
+          # Normalize separators: `root_install_dir` is `D:\` on Windows, whose
+          # trailing backslash would escape the closing quote of this string, and
+          # CMake wants forward slashes anyway. The dependency action normalizes
+          # the same value the same way before using it as its install prefix.
+          echo "CMAKE_PREFIX_PATH=$(echo '${{ matrix.cfg.root_install_dir }}' | tr '\\' '/')" >> $GITHUB_ENV
           if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
             cmd "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg.platform }}
             echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
