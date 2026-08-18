@@ -44,11 +44,18 @@ jobs:
           echo "CXX=${{ matrix.cfg.cxx }}" >> $GITHUB_ENV
           echo "BOOST_ROOT=${{ steps.install-dependencies.outputs.BOOST_ROOT }}" >>   $GITHUB_ENV
           echo "Boost_INCLUDE_DIR=${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" >> $GITHUB_ENV
-          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/include/eigen3" >> $GITHUB_ENV
+          # Eigen is built from source into `root_install_dir` on every OS, so its
+          # headers are at `<root_install_dir>/include/eigen3`. The action's
+          # EIGEN3_ROOT output points one directory deeper and does not exist;
+          # pyvinecopulib's workflow derives the path the same way this does.
           if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
+            # `D:\` already ends in a separator.
+            echo "EIGEN3_INCLUDE_DIR=${{ matrix.cfg.root_install_dir }}include\eigen3" >> $GITHUB_ENV
             cmd "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg.platform }}
             echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
             echo "D:\a\vinecopulib\kde1d-cpp\release\Release" >> $GITHUB_PATH
+          else
+            echo "EIGEN3_INCLUDE_DIR=${{ matrix.cfg.root_install_dir }}/include/eigen3" >> $GITHUB_ENV
           fi
         shell: bash
       - name: Compile the debug version
