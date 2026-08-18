@@ -99,4 +99,15 @@ jobs:
             "bin/Release/test.exe"
             cmake --build . --config Release --target install
           fi
+        shell: bash
+
+      # Building this repo's own tests uses the source tree, so it never
+      # exercises the installed layout or the exported target's dependencies.
+      # A downstream project does both.
+      - name: Build a downstream consumer against the installed package
+        if: matrix.cfg.os != 'windows-latest'
+        run:   |
+          cmake -S test/consumer -B consumer
+          cmake --build consumer
+          ./consumer/consumer
         shell: bash        
