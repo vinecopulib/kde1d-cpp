@@ -160,6 +160,54 @@ TEST_CASE("grid_size parameter", "[grid-size]")
   }
 }
 
+TEST_CASE("bandwidth selection on refit", "[bandwidth][refit]")
+{
+  SECTION("refitting re-selects the bandwidth")
+  {
+    // The two samples differ in scale by a factor of ten, so an automatically
+    // selected bandwidth must differ by roughly as much.
+    Eigen::VectorXd narrow = x_ub;
+    Eigen::VectorXd wide = x_ub * 10.0;
+
+    Kde1d fresh;
+    fresh.fit(wide);
+
+    Kde1d reused;
+    reused.fit(narrow);
+    double first = reused.get_bandwidth();
+    reused.fit(wide);
+
+    CHECK(reused.get_bandwidth() == Approx(fresh.get_bandwidth()));
+    CHECK(reused.get_bandwidth() > 2 * first);
+  }
+
+  SECTION("an explicitly requested bandwidth survives refitting")
+  {
+    Kde1d kde(NAN, NAN, VarType::continuous, 1.0, 0.75);
+    kde.fit(x_ub);
+    CHECK(kde.get_bandwidth() == Approx(0.75));
+    kde.fit(x_ub * 10.0);
+    CHECK(kde.get_bandwidth() == Approx(0.75));
+  }
+
+  SECTION("a grid-constructed density reports no bandwidth")
+  {
+    // The grid constructors never run a bandwidth selection, so the members
+    // they leave alone must still be well defined.
+    Kde1d fitted;
+    fitted.fit(x_ub);
+    Kde1d from_grid(interp::InterpolationGrid(
+                      fitted.get_grid_points(), fitted.get_values(), 0),
+                    NAN,
+                    NAN,
+                    VarType::continuous,
+                    0.0);
+    CHECK(std::isnan(from_grid.get_bandwidth()));
+    CHECK(from_grid.get_multiplier() == Approx(1.0));
+    CHECK(from_grid.get_degree() == 2);
+  }
+}
+
 TEST_CASE("misc checks", "[input-checks][argument-checks]")
 {
 

@@ -82,8 +82,9 @@ public:
   double get_prob0() const { return prob0_; }
   //! @return the bandwidth multiplier supplied at construction.
   double get_multiplier() const { return multiplier_; }
-  //! @return the bandwidth used to fit the density (post-multiplier;
-  //!   `NaN` until `fit()` has been called).
+  //! @return the bandwidth used by the most recent `fit()`, before the
+  //!   multiplier is applied. Equals the bandwidth supplied at construction
+  //!   when one was, and is `NaN` when none was and `fit()` has not run.
   double get_bandwidth() const { return bandwidth_; }
   //! @return the polynomial degree used by the local-likelihood
   //!   estimator (0, 1, or 2).
@@ -125,9 +126,16 @@ private:
   double xmin_;
   double xmax_;
   VarType type_;
-  double multiplier_;
-  double bandwidth_;
-  size_t degree_;
+  // Defaults matter: the grid constructors do not set these, so without them
+  // the members are indeterminate for a density built from a grid.
+  double multiplier_{ 1.0 };
+  // The bandwidth as requested at construction (`NaN` for automatic
+  // selection). Kept separate from `bandwidth_`, which holds the value the
+  // most recent `fit()` settled on, so that refitting re-selects instead of
+  // reusing the previous fit's bandwidth.
+  double bandwidth_spec_{ NAN };
+  double bandwidth_{ NAN };
+  size_t degree_{ 2 };
   size_t grid_size_;
   double prob0_{ 0.0 };
   double loglik_{ NAN };
@@ -203,6 +211,7 @@ inline Kde1d::Kde1d(double xmin,
   , xmax_(xmax)
   , type_(type)
   , multiplier_(multiplier)
+  , bandwidth_spec_(bandwidth)
   , bandwidth_(bandwidth)
   , degree_(degree)
   , grid_size_(grid_size)
@@ -344,8 +353,8 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 
   xx = boundary_transform(xx);
 
-  // bandwidth selection
-  bandwidth_ = select_bandwidth(xx, bandwidth_, multiplier_, degree_, w);
+  // bandwidth selection (from the request, so refitting re-selects)
+  bandwidth_ = select_bandwidth(xx, bandwidth_spec_, multiplier_, degree_, w);
 
   // fit model and evaluate in transformed domain
   Eigen::VectorXd grid_points = construct_grid_points(xx);
