@@ -1,9 +1,10 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
-# The exported target links `Eigen3::Eigen`, which must exist when this config
-# is imported.
+# The exported target links `Eigen3::Eigen` and `Boost::headers`, which must
+# exist when this config is imported.
 find_dependency(Eigen3 3.3 NO_MODULE)
+find_dependency(Boost 1.56)
 
 set_and_check(kde1d_INCLUDE_DIRS "@PACKAGE_include_install_dir@")
 include("${CMAKE_CURRENT_LIST_DIR}/@targets_export_name@.cmake")

@@ -3,7 +3,10 @@ target_include_directories(kde1d INTERFACE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         )
-target_link_libraries(kde1d INTERFACE Eigen3::Eigen)
+# The public headers include both <Eigen/Dense> and
+# <boost/math/distributions.hpp>, so both belong on the interface -- a consumer
+# of the installed package has no other way to learn about them.
+target_link_libraries(kde1d INTERFACE Eigen3::Eigen Boost::headers)
 
 if(BUILD_TESTING)
     set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
