@@ -3,6 +3,7 @@ target_include_directories(kde1d INTERFACE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         )
+target_link_libraries(kde1d INTERFACE Eigen3::Eigen)
 
 if(BUILD_TESTING)
     set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)

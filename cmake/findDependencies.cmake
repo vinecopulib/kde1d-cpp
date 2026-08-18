@@ -1,7 +1,13 @@
-find_package(Eigen3                       REQUIRED)
+# Eigen in config mode, so it is consumed through its imported target rather
+# than an include path. `EIGEN3_INCLUDE_DIR` is set by Eigen's `FindEigen3`
+# module but not by its `Eigen3Config.cmake`, so reading that variable silently
+# produced an empty include path against an installed Eigen -- point
+# `CMAKE_PREFIX_PATH` at the install prefix and `Eigen3::Eigen` carries the
+# headers itself.
+find_package(Eigen3 3.3                   REQUIRED NO_MODULE)
 find_package(Boost 1.56                   REQUIRED)
 
-set(external_includes ${EIGEN3_INCLUDE_DIR} ${Boost_INCLUDE_DIRS})
+set(external_includes ${Boost_INCLUDE_DIRS})
 
 # Find doxygen and configure if found
 find_package(Doxygen QUIET)
