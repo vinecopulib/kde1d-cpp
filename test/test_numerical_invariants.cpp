@@ -77,6 +77,31 @@ TEST_CASE("continuous fits satisfy numerical invariants",
   }
 }
 
+TEST_CASE("finite-support fits are scale equivariant",
+          "[numerical-invariants][boundary-scale]")
+{
+  Eigen::VectorXd observations =
+    Eigen::VectorXd::LinSpaced(2000, 0.5 / 2000.0, 1.0 - 0.5 / 2000.0);
+  Eigen::VectorXd points(10);
+  points << 0.0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 0.1, 0.5, 0.9, 1.0;
+
+  kde1d::Kde1d reference(0.0, 1.0, "continuous", 1.0, 0.3, 2, 400);
+  reference.fit(observations);
+
+  for (double scale : { 1e-4, 1e4 }) {
+    INFO("scale=" << scale);
+    kde1d::Kde1d scaled(
+      0.0, scale, "continuous", 1.0, 0.3, 2, 400);
+    scaled.fit(observations * scale);
+
+    CHECK((scaled.get_grid_points() / scale)
+            .isApprox(reference.get_grid_points(), 1e-11));
+    CHECK((scaled.pdf(points * scale) * scale)
+            .isApprox(reference.pdf(points), 1e-10));
+    CHECK(scaled.cdf(points * scale).isApprox(reference.cdf(points), 1e-10));
+  }
+}
+
 TEST_CASE("interpolation preserves nonuniform-grid reference values",
           "[interpolation][parity]")
 {
