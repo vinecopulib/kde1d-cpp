@@ -125,4 +125,11 @@ TEST_CASE("interpolation preserves nonuniform-grid reference values",
     0.0026576718850311715;
   kde1d::interp::InterpolationGrid normalized(grid_points, values, 3);
   CHECK(normalized.get_values().isApprox(expected_normalized_values, 1e-12));
+
+  grid.normalize(3);
+  CHECK(grid.get_values().isApprox(expected_normalized_values, 1e-12));
+  CHECK(grid.interpolate(queries).head(13).isApprox(
+    expected_interpolation / expected_integral(0), 1e-12));
+  CHECK(grid.integrate(queries).head(13).isApprox(
+    expected_normalized_integral, 1e-12));
 }
