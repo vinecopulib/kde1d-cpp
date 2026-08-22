@@ -45,9 +45,18 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
   unbounded_fit.fit(unbounded);
   kde1d::Kde1d bounded_fit(0.0, 1.0, "continuous", 1.0, 0.05, 2, 400);
   bounded_fit.fit(bounded);
-  kde1d::interp::InterpolationGrid bounded_grid(bounded_fit.get_grid_points(),
-                                                bounded_fit.get_values(),
-                                                0);
+  Eigen::VectorXd bounded_grid_points = bounded_fit.get_grid_points();
+  Eigen::VectorXd bounded_values = bounded_fit.get_values();
+  kde1d::interp::InterpolationGrid bounded_grid(
+    bounded_grid_points, bounded_values, 0);
+
+  BENCHMARK("interpolation/construct/bounded/m=400")
+  {
+    return kde1d::interp::InterpolationGrid(
+             bounded_grid_points, bounded_values, 0)
+      .get_values()
+      .sum();
+  };
 
   for (Eigen::Index batch_size : std::array<Eigen::Index, 4>{ 10,
                                                               100,
@@ -64,6 +73,13 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
     BENCHMARK("interpolation/interpolate/bounded" + suffix)
     {
       return bounded_grid.interpolate(bounded_queries).sum();
+    };
+
+    BENCHMARK("interpolation/construct-and-interpolate/bounded" + suffix)
+    {
+      kde1d::interp::InterpolationGrid grid(
+        bounded_grid_points, bounded_values, 0);
+      return grid.interpolate(bounded_queries).sum();
     };
 
     BENCHMARK("interpolation/integrate/bounded" + suffix)

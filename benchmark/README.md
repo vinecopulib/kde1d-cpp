@@ -23,5 +23,6 @@ manual comparisons and never make CI pass or fail.
 
 Evaluation workloads use batches of 10, 100, 1,000, and 10,000 points. They
 cover interpolation and integration directly as well as the public PDF, CDF,
-and quantile paths, so an optimization can be checked for both its isolated
-effect and its end-to-end impact.
+and quantile paths. Grid construction is measured both alone and together with
+interpolation, so an evaluation optimization cannot hide an excessive setup
+cost.
