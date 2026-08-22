@@ -8,6 +8,8 @@ include(cmake/findDependencies.cmake      REQUIRED)
 
 include(cmake/options.cmake               REQUIRED)
 
+include(CTest)
+
 include(cmake/compilerDefOpt.cmake        REQUIRED)
 
 include(cmake/buildTargets.cmake          REQUIRED)

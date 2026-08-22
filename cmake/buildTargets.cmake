@@ -88,5 +88,10 @@ install(
 if(NOT WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug" AND BUILD_TESTING AND CODE_COVERAGE)
     include(cmake/codeCoverage.cmake)
     file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/coverage)
-    setup_target_for_coverage(${PROJECT_NAME}_coverage test coverage)
+    setup_target_for_coverage(${PROJECT_NAME}_coverage
+                              "ctest --output-on-failure"
+                              coverage)
+    add_dependencies(${PROJECT_NAME}_coverage
+                     kde1d-unit-test
+                     kde1d-invariant-test)
 endif()
