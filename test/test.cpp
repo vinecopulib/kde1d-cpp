@@ -94,6 +94,21 @@ TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]
   CHECK(left_bounded.get_edf() == Approx(right_bounded.get_edf()));
 }
 
+TEST_CASE("finite support truncates density", "[finite-support]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.0, 1.0);
+  Kde1d bounded(0.0, 1.0, "continuous", 1.0, 0.5);
+  bounded.fit(observations);
+
+  Eigen::VectorXd evaluation_points(4);
+  evaluation_points << -1e-8, 0.0, 1.0, 1.0 + 1e-8;
+  Eigen::VectorXd density = bounded.pdf(evaluation_points);
+  CHECK(density(0) == 0.0);
+  CHECK(density(1) > 0.0);
+  CHECK(density(2) > 0.0);
+  CHECK(density(3) == 0.0);
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
