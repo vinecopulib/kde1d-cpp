@@ -77,6 +77,23 @@ TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
   CHECK(grid(grid.size() - 1) == Approx(0.0));
 }
 
+TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.01, 5.0);
+  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.5);
+  left_bounded.fit(observations);
+
+  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.5);
+  right_bounded.fit(-observations);
+
+  CHECK(left_bounded.get_grid_points().isApprox(
+    -right_bounded.get_grid_points().reverse()));
+  CHECK(left_bounded.get_values().isApprox(
+    right_bounded.get_values().reverse()));
+  CHECK(left_bounded.get_loglik() == Approx(right_bounded.get_loglik()));
+  CHECK(left_bounded.get_edf() == Approx(right_bounded.get_edf()));
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
