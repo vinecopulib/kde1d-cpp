@@ -22,6 +22,17 @@ size_t nlevels = 50;
 Eigen::VectorXd x_d =
   (x_cb.array() * (static_cast<double>(nlevels) - 1)).round();
 
+TEST_CASE("linear binning includes the upper endpoint", "[linear-binning]")
+{
+  Eigen::VectorXd observations(3);
+  observations << 0.0, 0.5, 1.0;
+  Eigen::VectorXd counts = tools::linbin(
+    observations, 0.0, 1.0, 2, Eigen::VectorXd::Ones(3));
+
+  CHECK(counts.isApprox(Eigen::VectorXd::Ones(3)));
+  CHECK(counts.sum() == Approx(3.0));
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
