@@ -109,6 +109,35 @@ TEST_CASE("finite support truncates density", "[finite-support]")
   CHECK(density(3) == 0.0);
 }
 
+TEST_CASE("likelihood summaries match fitted densities", "[likelihood]")
+{
+  SECTION("weighted likelihood")
+  {
+    Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(100, -2.0, 2.0);
+    Eigen::VectorXd weights = Eigen::VectorXd::LinSpaced(100, 0.5, 1.5);
+    Kde1d weighted(NAN, NAN, "continuous", 1.0, 0.5);
+    weighted.fit(observations, weights);
+
+    double expected =
+      (weighted.pdf(observations).array().log() * weights.array() /
+       weights.mean())
+        .sum();
+    CHECK(weighted.get_loglik() == Approx(expected));
+  }
+
+  SECTION("zero-inflated likelihood")
+  {
+    Eigen::VectorXd observations(100);
+    observations.head(40).setZero();
+    observations.tail(60) = Eigen::VectorXd::LinSpaced(60, 0.01, 3.0);
+    Kde1d zero_inflated(0.0, NAN, "zero-inflated", 1.0, 0.5);
+    zero_inflated.fit(observations);
+
+    CHECK(zero_inflated.get_loglik() ==
+          Approx(zero_inflated.pdf(observations).array().log().sum()));
+  }
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
