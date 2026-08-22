@@ -144,8 +144,12 @@ TEST_CASE("likelihood summaries match fitted densities", "[likelihood]")
     Kde1d zero_inflated(0.0, NAN, "zero-inflated", 1.0, 0.5);
     zero_inflated.fit(observations);
 
-    CHECK(zero_inflated.get_loglik() ==
-          Approx(zero_inflated.pdf(observations).array().log().sum()));
+    Eigen::VectorXd density = zero_inflated.pdf(observations);
+    REQUIRE(zero_inflated.get_values().array().isFinite().all());
+    REQUIRE(density.array().isFinite().all());
+    REQUIRE((density.array() > 0.0).all());
+    REQUIRE(std::isfinite(zero_inflated.get_loglik()));
+    CHECK(zero_inflated.get_loglik() == Approx(density.array().log().sum()));
   }
 }
 

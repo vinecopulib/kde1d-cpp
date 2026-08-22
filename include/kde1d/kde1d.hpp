@@ -648,6 +648,8 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
     x, bandwidth_, grid_points(0), grid_points(m - 1), weights, m - 1);
   Eigen::VectorXd f0 = kde_fft.kde_drv(0);
   Eigen::VectorXd f1(f0.size()), f2(f0.size());
+  const double density_floor =
+    std::numeric_limits<double>::epsilon() * f0.cwiseAbs().maxCoeff();
 
   Eigen::VectorXd wbin = Eigen::VectorXd::Ones(m);
   if (weights.size()) {
@@ -688,9 +690,13 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
   res.col(0) = res.col(0).array() * (-0.5 * b.array().pow(2) * S.array()).exp();
 
   for (size_t k = 0; k < m; k++) {
+    if (!std::isfinite(f0(k)) || f0(k) <= density_floor) {
+      res.row(k).setZero();
+      continue;
+    }
     res(k, 1) =
       calculate_infl(x.size(), f0(k), f1(k), f2(k), bandwidth_, S(k), wbin(k));
-    if (std::isnan(res(k, 0)))
+    if (!std::isfinite(res(k, 0)) || res(k, 0) < 0.0)
       res.row(k).setZero();
   }
 
