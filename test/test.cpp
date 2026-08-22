@@ -47,6 +47,33 @@ TEST_CASE("right extrapolation is continuous", "[interpolation]")
         Approx(3.0 * std::exp(-0.5)));
 }
 
+TEST_CASE("spline quantiles invert nonuniform cumulative integrals",
+          "[interpolation][quantile]")
+{
+  Eigen::VectorXd grid_points(6);
+  grid_points << -2.0, -0.7, -0.1, 0.2, 0.9, 1.5;
+  Eigen::VectorXd values(6);
+  values << 0.05, 0.4, 1.2, 0.8, 0.3, 0.02;
+  interp::InterpolationGrid grid(grid_points, values, 1);
+
+  Eigen::VectorXd probabilities(10);
+  probabilities << 0.75, 1e-10, 0.25, 0.5, 1.0 - 1e-10, 0.25, 0.0, 1.0,
+    0.9, 0.1;
+  Eigen::VectorXd quantiles = grid.quantile(probabilities);
+  Eigen::VectorXd reference = tools::invert_f(
+    probabilities,
+    [&](const Eigen::VectorXd& x) { return grid.integrate(x, true); },
+    grid.get_grid_min(),
+    grid.get_grid_max(),
+    50);
+
+  CHECK(quantiles.isApprox(reference, 1e-10));
+  CHECK(grid.integrate(quantiles, true).isApprox(probabilities, 1e-12));
+  CHECK(quantiles(2) == quantiles(5));
+  CHECK(quantiles(6) == grid.get_grid_min());
+  CHECK(quantiles(7) == grid.get_grid_max());
+}
+
 TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.2, 0.8);
@@ -130,14 +157,15 @@ TEST_CASE("continuous quantiles invert the normalized CDF", "[quantile]")
     1.0;
   Eigen::VectorXd quantiles = fit.quantile(probabilities);
   Eigen::VectorXd round_trip = fit.cdf(quantiles);
+  CAPTURE(probabilities.transpose(),
+          quantiles.transpose(),
+          round_trip.transpose());
 
   CHECK((quantiles.tail(quantiles.size() - 1) -
          quantiles.head(quantiles.size() - 1))
           .minCoeff() >= 0.0);
   CHECK(quantiles(5) == quantiles(6));
-  // The current inverse uses the raw spline integral whereas cdf() normalizes
-  // it. Keep this loose enough to characterize that known discrepancy.
-  CHECK((round_trip - probabilities).cwiseAbs().maxCoeff() < 1e-5);
+  CHECK((round_trip - probabilities).cwiseAbs().maxCoeff() < 1e-8);
   CHECK(quantiles(0) >= 0.0);
   CHECK(quantiles(quantiles.size() - 1) <= 1.0);
 

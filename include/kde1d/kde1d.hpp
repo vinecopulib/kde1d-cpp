@@ -550,17 +550,7 @@ Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
 inline Eigen::VectorXd
 Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 {
-  auto cdf = [&](const Eigen::VectorXd& xx) { return grid_.integrate(xx); };
-  auto q =
-    tools::invert_f(x, cdf, grid_.get_grid_min(), grid_.get_grid_max(), 35);
-
-  // replace with NaN where the input was NaN
-  for (long i = 0; i < x.size(); i++) {
-    if (std::isnan(x(i)))
-      q(i) = x(i);
-  }
-
-  return q;
+  return grid_.quantile(x);
 }
 
 inline Eigen::VectorXd
@@ -584,6 +574,9 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_zi(const Eigen::VectorXd& x) const
 {
+  if (prob0_ >= 1.0)
+    return tools::unaryExpr_or_nan(x, [](const double&) { return 0.0; });
+
   Eigen::VectorXd qs(x.size());
   auto p0 = this->cdf(Eigen::VectorXd::Zero(1), false)(0);
   auto newx = (x.array() <= p0 - prob0_)
