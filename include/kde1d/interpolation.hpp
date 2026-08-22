@@ -41,9 +41,11 @@ private:
                         const Eigen::Vector4d& a) const;
   size_t find_cell(const double& x0) const;
   Eigen::Vector4d find_cell_coefs(const size_t& k) const;
+  void update_cell_coefs();
 
   Eigen::VectorXd grid_points_;
   Eigen::VectorXd values_;
+  Eigen::Matrix<double, 4, Eigen::Dynamic> cell_coefs_;
 };
 
 //! Constructor
@@ -76,6 +78,7 @@ InterpolationGrid::normalize(int times)
     int_max = this->integrate(Eigen::VectorXd::Constant(1, x_max))(0);
     values_ /= int_max;
   }
+  update_cell_coefs();
 }
 
 //! Interpolation
@@ -95,7 +98,7 @@ InterpolationGrid::interpolate(const Eigen::VectorXd& x) const
       return values_(k + 1) * std::exp(-0.5 * (xev - 1) * (xev - 1));
     }
 
-    return cubic_poly(xev, find_cell_coefs(k));
+    return cubic_poly(xev, Eigen::Vector4d(cell_coefs_.col(k)));
   };
 
   return tools::unaryExpr_or_nan(x, interpolate_one);
@@ -272,6 +275,14 @@ InterpolationGrid::find_cell_coefs(const size_t& k) const
   a(3) = 2 * (values_(k) - values_(k2)) + dx1 + dx2;
 
   return a;
+}
+
+inline void
+InterpolationGrid::update_cell_coefs()
+{
+  cell_coefs_.resize(4, grid_points_.size() - 1);
+  for (Eigen::Index k = 0; k < grid_points_.size() - 1; ++k)
+    cell_coefs_.col(k) = find_cell_coefs(k);
 }
 
 } // end kde1d::interp
