@@ -47,6 +47,36 @@ TEST_CASE("right extrapolation is continuous", "[interpolation]")
         Approx(3.0 * std::exp(-0.5)));
 }
 
+TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.2, 0.8);
+  Kde1d bounded(0.0, 1.0, "continuous", 1.0, 0.3);
+  bounded.fit(observations);
+  Eigen::VectorXd grid = bounded.get_grid_points();
+
+  CHECK(grid(0) == Approx(0.0));
+  CHECK(grid(grid.size() - 1) == Approx(1.0));
+  CHECK(grid(1) < observations.minCoeff());
+  CHECK(grid(grid.size() - 2) > observations.maxCoeff());
+  CHECK((grid.tail(grid.size() - 1) - grid.head(grid.size() - 1)).minCoeff() >
+        0.0);
+
+  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.3);
+  left_bounded.fit(observations);
+  grid = left_bounded.get_grid_points();
+  CHECK(grid(0) == Approx(0.0));
+  CHECK(grid(1) < observations.minCoeff());
+  CHECK(grid(grid.size() - 1) > observations.maxCoeff());
+
+  observations *= -1.0;
+  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.3);
+  right_bounded.fit(observations);
+  grid = right_bounded.get_grid_points();
+  CHECK(grid(0) < observations.minCoeff());
+  CHECK(grid(grid.size() - 2) > observations.maxCoeff());
+  CHECK(grid(grid.size() - 1) == Approx(0.0));
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
