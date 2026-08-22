@@ -10,16 +10,20 @@ namespace tools {
 //! @param x function argument.
 //! @param func function to be applied.
 template<typename T>
-Eigen::MatrixXd
-unaryExpr_or_nan(const Eigen::MatrixXd& x, const T& func)
+Eigen::VectorXd
+unaryExpr_or_nan(const Eigen::Ref<const Eigen::VectorXd>& x, const T& func)
 {
-  return x.unaryExpr([&func](double y) {
-    if (std::isnan(y)) {
-      return std::numeric_limits<double>::quiet_NaN();
+  Eigen::VectorXd result(x.size());
+  const double* input = x.data();
+  double* output = result.data();
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if ((std::isnan)(input[i])) {
+      output[i] = std::numeric_limits<double>::quiet_NaN();
     } else {
-      return func(y);
+      output[i] = func(input[i]);
     }
-  });
+  }
+  return result;
 }
 
 //! computes the inverse \f$ f^{-1} \f$ of a function \f$ f \f$ by the
