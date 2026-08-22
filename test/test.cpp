@@ -109,6 +109,17 @@ TEST_CASE("finite support truncates density", "[finite-support]")
   CHECK(density(3) == 0.0);
 }
 
+TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")
+{
+  Eigen::VectorXd grid_points = Eigen::VectorXd::LinSpaced(10, 0.0, 9.0);
+  Eigen::VectorXd values = Eigen::VectorXd::Ones(10);
+  values(9) = 0.0;
+  interp::InterpolationGrid grid(grid_points, values, 0);
+  Kde1d discrete(grid, NAN, NAN, "discrete");
+
+  CHECK(discrete.cdf(Eigen::VectorXd::Constant(1, 8.0))(0) == 1.0);
+}
+
 TEST_CASE("likelihood summaries match fitted densities", "[likelihood]")
 {
   SECTION("weighted likelihood")

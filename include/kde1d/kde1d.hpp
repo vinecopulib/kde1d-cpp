@@ -509,7 +509,8 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
     } else if (xx >= ub) {
       return 1.0;
     } else {
-      return f_cum(static_cast<size_t>(xx - lb));
+      return std::min(
+        1.0, std::max(0.0, f_cum(static_cast<size_t>(xx - lb))));
     };
   });
 }
