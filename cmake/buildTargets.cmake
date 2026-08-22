@@ -17,6 +17,10 @@ if(BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
 endif(BUILD_BENCHMARKS)
 
+if(BUILD_DIAGNOSTICS)
+    add_subdirectory(diagnostic)
+endif(BUILD_DIAGNOSTICS)
+
 # Related to exports for linux/mac and code coverage
 ####
 # Installation
