@@ -76,3 +76,53 @@ TEST_CASE("continuous fits satisfy numerical invariants",
     }
   }
 }
+
+TEST_CASE("interpolation preserves nonuniform-grid reference values",
+          "[interpolation][parity]")
+{
+  Eigen::VectorXd grid_points(7);
+  grid_points << -2.0, -1.99, -1.2, -0.1, 0.0, 0.03, 2.5;
+  Eigen::VectorXd values(7);
+  values << 0.1, 0.8, 0.3, 1.2, 0.4, 1.1, 0.05;
+  Eigen::VectorXd queries(14);
+  queries << 2.5, -3.0, 0.015, -1.99, 1.1, -2.0, 3.0,
+    -0.1, -1.5, 0.0, 0.03, -1.2, -1.2, NAN;
+
+  kde1d::interp::InterpolationGrid grid(grid_points, values, 0);
+
+  Eigen::VectorXd expected_interpolation(13);
+  expected_interpolation << 0.05, 0.0, 0.72395374493927123, 0.8,
+    8.6024753616471621, 0.1, 0.048985984426542499, 1.2,
+    5.3485271720570431, 0.4, 1.1, 0.3, 0.3;
+  Eigen::VectorXd interpolation = grid.interpolate(queries);
+  CHECK(interpolation.head(13).isApprox(expected_interpolation, 1e-12));
+  CHECK(std::isnan(interpolation(13)));
+
+  Eigen::VectorXd expected_integral(13);
+  expected_integral << 18.813458606991869, 0.0, 5.6615750998365577,
+    0.0039240242616033786, 13.498277718530957, 0.0,
+    18.813458606991869, 5.5893705472445951, 3.3631171509959734,
+    5.6533162543153024, 5.6752953292140882, 4.0344600562080499,
+    4.0344600562080499;
+  Eigen::VectorXd integral = grid.integrate(queries);
+  CHECK(integral.head(13).isApprox(expected_integral, 1e-12));
+  CHECK(std::isnan(integral(13)));
+
+  Eigen::VectorXd expected_normalized_integral(13);
+  expected_normalized_integral << 1.0, 0.0, 0.30093217935656336,
+    0.00020857537912487005, 0.71747986377764861, 0.0, 1.0,
+    0.29709425916866511, 0.17876123796536264, 0.30049319332567026,
+    0.30166145671402017, 0.21444542125330829, 0.21444542125330829;
+  Eigen::VectorXd normalized_integral = grid.integrate(queries, true);
+  CHECK(normalized_integral.head(13).isApprox(expected_normalized_integral,
+                                               1e-12));
+  CHECK(std::isnan(normalized_integral(13)));
+
+  Eigen::VectorXd expected_normalized_values(7);
+  expected_normalized_values << 0.005315343770062343,
+    0.042522750160498744, 0.015946031310187028, 0.063784125240748113,
+    0.021261375080249372, 0.058468781470685779,
+    0.0026576718850311715;
+  kde1d::interp::InterpolationGrid normalized(grid_points, values, 3);
+  CHECK(normalized.get_values().isApprox(expected_normalized_values, 1e-12));
+}

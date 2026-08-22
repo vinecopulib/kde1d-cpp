@@ -2,6 +2,7 @@
 #define CATCH_CONFIG_ENABLE_BENCHMARKING
 #include "catch.hpp"
 #include <kde1d.hpp>
+#include <array>
 
 TEST_CASE("continuous KDE performance", "[!benchmark]")
 {
@@ -44,23 +45,50 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
   unbounded_fit.fit(unbounded);
   kde1d::Kde1d bounded_fit(0.0, 1.0, "continuous", 1.0, 0.05, 2, 400);
   bounded_fit.fit(bounded);
-  Eigen::VectorXd unbounded_queries =
-    Eigen::VectorXd::LinSpaced(100000, -4.0, 4.0);
-  Eigen::VectorXd bounded_queries =
-    Eigen::VectorXd::LinSpaced(100000, 1e-8, 1.0 - 1e-8);
+  kde1d::interp::InterpolationGrid bounded_grid(bounded_fit.get_grid_points(),
+                                                bounded_fit.get_values(),
+                                                0);
 
-  BENCHMARK("evaluate/pdf/unbounded/tll/n=100000")
-  {
-    return unbounded_fit.pdf(unbounded_queries).sum();
-  };
+  for (Eigen::Index batch_size : std::array<Eigen::Index, 4>{ 10,
+                                                              100,
+                                                              1000,
+                                                              10000 }) {
+    Eigen::VectorXd unbounded_queries =
+      Eigen::VectorXd::LinSpaced(batch_size, -4.0, 4.0);
+    Eigen::VectorXd bounded_queries =
+      Eigen::VectorXd::LinSpaced(batch_size, 1e-8, 1.0 - 1e-8);
+    Eigen::VectorXd probabilities =
+      Eigen::VectorXd::LinSpaced(batch_size, 1e-4, 1.0 - 1e-4);
+    const std::string suffix = "/batch=" + std::to_string(batch_size);
 
-  BENCHMARK("evaluate/pdf/bounded/tll/n=100000")
-  {
-    return bounded_fit.pdf(bounded_queries).sum();
-  };
+    BENCHMARK("interpolation/interpolate/bounded" + suffix)
+    {
+      return bounded_grid.interpolate(bounded_queries).sum();
+    };
 
-  BENCHMARK("evaluate/cdf/bounded/tll/n=100000")
-  {
-    return bounded_fit.cdf(bounded_queries).sum();
-  };
+    BENCHMARK("interpolation/integrate/bounded" + suffix)
+    {
+      return bounded_grid.integrate(bounded_queries, true).sum();
+    };
+
+    BENCHMARK("evaluate/pdf/unbounded/tll" + suffix)
+    {
+      return unbounded_fit.pdf(unbounded_queries).sum();
+    };
+
+    BENCHMARK("evaluate/pdf/bounded/tll" + suffix)
+    {
+      return bounded_fit.pdf(bounded_queries).sum();
+    };
+
+    BENCHMARK("evaluate/cdf/bounded/tll" + suffix)
+    {
+      return bounded_fit.cdf(bounded_queries).sum();
+    };
+
+    BENCHMARK("evaluate/quantile/bounded/tll" + suffix)
+    {
+      return bounded_fit.quantile(probabilities).sum();
+    };
+  }
 }
