@@ -22,7 +22,8 @@ The benchmark is deliberately not registered with CTest: timings are for
 manual comparisons and never make CI pass or fail.
 
 Evaluation workloads use batches of 10, 100, 1,000, and 10,000 points. They
-cover interpolation and integration directly as well as the public PDF, CDF,
-and quantile paths. Grid construction is measured both alone and together with
-interpolation, so an evaluation optimization cannot hide an excessive setup
-cost.
+cover interpolation and integration directly as well as the public PDF and CDF
+paths. Quantile timings cover bounded and unbounded continuous fits, discrete
+and zero-inflated fits, and the simulation path. Grid construction is measured
+both alone and together with interpolation, so an evaluation optimization
+cannot hide an excessive setup cost.

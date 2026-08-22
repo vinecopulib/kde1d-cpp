@@ -45,6 +45,13 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
   unbounded_fit.fit(unbounded);
   kde1d::Kde1d bounded_fit(0.0, 1.0, "continuous", 1.0, 0.05, 2, 400);
   bounded_fit.fit(bounded);
+  kde1d::Kde1d discrete_fit(0.0, 100.0, "discrete", 1.0, 2.0, 2, 400);
+  discrete_fit.fit((bounded.array() * 100.0).round());
+  Eigen::VectorXd zero_inflated = bounded;
+  zero_inflated.head(zero_inflated.size() / 4).setZero();
+  kde1d::Kde1d zero_inflated_fit(
+    0.0, 1.0, "zero-inflated", 1.0, 0.05, 2, 400);
+  zero_inflated_fit.fit(zero_inflated);
   Eigen::VectorXd bounded_grid_points = bounded_fit.get_grid_points();
   Eigen::VectorXd bounded_values = bounded_fit.get_values();
   kde1d::interp::InterpolationGrid bounded_grid(
@@ -105,6 +112,26 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
     BENCHMARK("evaluate/quantile/bounded/tll" + suffix)
     {
       return bounded_fit.quantile(probabilities).sum();
+    };
+
+    BENCHMARK("evaluate/quantile/unbounded/tll" + suffix)
+    {
+      return unbounded_fit.quantile(probabilities).sum();
+    };
+
+    BENCHMARK("evaluate/quantile/discrete/tll" + suffix)
+    {
+      return discrete_fit.quantile(probabilities).sum();
+    };
+
+    BENCHMARK("evaluate/quantile/zero-inflated/tll" + suffix)
+    {
+      return zero_inflated_fit.quantile(probabilities).sum();
+    };
+
+    BENCHMARK("evaluate/simulate/bounded/tll" + suffix)
+    {
+      return bounded_fit.simulate(batch_size, { 1 }).sum();
     };
   }
 }

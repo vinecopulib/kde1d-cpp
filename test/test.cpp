@@ -109,6 +109,66 @@ TEST_CASE("finite support truncates density", "[finite-support]")
   CHECK(density(3) == 0.0);
 }
 
+TEST_CASE("continuous quantiles invert the normalized CDF", "[quantile]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.0, 1.0);
+  Kde1d fit(0.0, 1.0, "continuous", 1.0, 0.1, 2, 400);
+  fit.fit(observations);
+
+  Eigen::VectorXd probabilities(12);
+  probabilities << 0.0,
+    1e-12,
+    1e-8,
+    1e-4,
+    0.1,
+    0.5,
+    0.5,
+    0.9,
+    1.0 - 1e-4,
+    1.0 - 1e-8,
+    1.0 - 1e-12,
+    1.0;
+  Eigen::VectorXd quantiles = fit.quantile(probabilities);
+  Eigen::VectorXd round_trip = fit.cdf(quantiles);
+
+  CHECK((quantiles.tail(quantiles.size() - 1) -
+         quantiles.head(quantiles.size() - 1))
+          .minCoeff() >= 0.0);
+  CHECK(quantiles(5) == quantiles(6));
+  // The current inverse uses the raw spline integral whereas cdf() normalizes
+  // it. Keep this loose enough to characterize that known discrepancy.
+  CHECK((round_trip - probabilities).cwiseAbs().maxCoeff() < 1e-5);
+  CHECK(quantiles(0) >= 0.0);
+  CHECK(quantiles(quantiles.size() - 1) <= 1.0);
+
+  Eigen::VectorXd shuffled(7);
+  shuffled << 0.9, NAN, 0.1, 0.9, 0.5, 0.1, NAN;
+  quantiles = fit.quantile(shuffled);
+  CHECK(std::isnan(quantiles(1)));
+  CHECK(std::isnan(quantiles(6)));
+  CHECK(quantiles(0) == quantiles(3));
+  CHECK(quantiles(2) == quantiles(5));
+}
+
+TEST_CASE("discrete quantiles satisfy the generalized inverse", "[quantile]")
+{
+  Eigen::VectorXd observations(10);
+  observations << 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0;
+  Kde1d fit(0.0, 3.0, "discrete", 1.0, 0.5, 2, 100);
+  fit.fit(observations);
+
+  Eigen::VectorXd probabilities(9);
+  probabilities << 0.0, 1e-12, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0 - 1e-12, 1.0;
+  Eigen::VectorXd quantiles = fit.quantile(probabilities);
+  Eigen::VectorXd cumulative = fit.cdf(quantiles);
+
+  CHECK((quantiles.array() == quantiles.array().round()).all());
+  CHECK((quantiles.tail(quantiles.size() - 1) -
+         quantiles.head(quantiles.size() - 1))
+          .minCoeff() >= 0.0);
+  CHECK((cumulative.array() + 1e-14 >= probabilities.array()).all());
+}
+
 TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")
 {
   Eigen::VectorXd grid_points = Eigen::VectorXd::LinSpaced(10, 0.0, 9.0);
