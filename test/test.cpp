@@ -33,6 +33,20 @@ TEST_CASE("linear binning includes the upper endpoint", "[linear-binning]")
   CHECK(counts.sum() == Approx(3.0));
 }
 
+TEST_CASE("right extrapolation is continuous", "[interpolation]")
+{
+  Eigen::VectorXd grid_points(2);
+  grid_points << 0.0, 1.0;
+  Eigen::VectorXd values(2);
+  values << 2.0, 3.0;
+  interp::InterpolationGrid grid(grid_points, values, 0);
+
+  CHECK(grid.interpolate(Eigen::VectorXd::Constant(1, 1.0))(0) ==
+        Approx(3.0));
+  CHECK(grid.interpolate(Eigen::VectorXd::Constant(1, 2.0))(0) ==
+        Approx(3.0 * std::exp(-0.5)));
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
