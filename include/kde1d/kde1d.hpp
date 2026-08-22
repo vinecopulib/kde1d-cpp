@@ -140,6 +140,8 @@ private:
   double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
+  // Regularizes one-sided log transforms in the units of the fitted data.
+  double boundary_offset_{ 1e-5 };
   static constexpr double K0_ = 0.3989425;
 
   // private methods
@@ -349,6 +351,28 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
     }
   } else if (type_ == VarType::discrete) {
     xx = stats::equi_jitter(xx);
+  }
+
+  if (type_ != VarType::discrete &&
+      (std::isnan(xmin_) != std::isnan(xmax_))) {
+    // Scaling the median boundary distance makes the transform equivariant
+    // under changes of measurement units while remaining robust to outliers.
+    Eigen::VectorXd distances;
+    if (std::isnan(xmin_))
+      distances = xmax_ - xx.array();
+    else
+      distances = xx.array() - xmin_;
+    if (w.size() == 0) {
+      boundary_offset_ = 1e-5 * stats::median(distances);
+    } else {
+      boundary_offset_ =
+        1e-5 * stats::quantile(
+                 distances, Eigen::VectorXd::Constant(1, 0.5), w)(0);
+    }
+    if (!(boundary_offset_ > 0.0))
+      boundary_offset_ = 1e-5 * distances.maxCoeff();
+    if (!(boundary_offset_ > 0.0))
+      boundary_offset_ = 1e-5;
   }
 
   xx = boundary_transform(xx);
@@ -756,10 +780,10 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
-      x_new = (1e-5 + x.array() - xmin_).log();
+      x_new = (boundary_offset_ + x.array() - xmin_).log();
     } else if (!std::isnan(xmax_)) {
       // right boundary -> negative log transform
-      x_new = (1e-5 + xmax_ - x.array()).log();
+      x_new = (boundary_offset_ + xmax_ - x.array()).log();
     } else {
       // no boundary -> no transform
     }
@@ -770,10 +794,10 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
       // left boundary -> log transform
-      x_new = x.array().exp() + xmin_ - 1e-5;
+      x_new = x.array().exp() + xmin_ - boundary_offset_;
     } else if (!std::isnan(xmax_)) {
       // right boundary -> negative log transform
-      x_new = -(x.array().exp() - xmax_ - 1e-5);
+      x_new = -(x.array().exp() - xmax_ - boundary_offset_);
     } else {
       // no boundary -> no transform
     }
@@ -804,10 +828,10 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
     corr_term = 1.0 / corr_term.array();
   } else if (!std::isnan(xmin_)) {
     // left boundary -> log transform
-    corr_term = 1.0 / (1e-5 + x.array() - xmin_);
+    corr_term = 1.0 / (boundary_offset_ + x.array() - xmin_);
   } else if (!std::isnan(xmax_)) {
     // right boundary -> negative log transform
-    corr_term = 1.0 / (1e-5 + xmax_ - x.array());
+    corr_term = 1.0 / (boundary_offset_ + xmax_ - x.array());
   } else {
     // no boundary -> no transform
     corr_term.fill(1.0);

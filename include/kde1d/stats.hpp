@@ -14,6 +14,21 @@ namespace kde1d {
 //! statistical functions
 namespace stats {
 
+//! sample median using linear-time partial sorting.
+//! @param x data.
+//! @return sample median.
+inline double
+median(Eigen::VectorXd x)
+{
+  if (x.size() == 0)
+    throw std::invalid_argument("cannot compute the median of an empty vector");
+  double* upper = x.data() + x.size() / 2;
+  std::nth_element(x.data(), upper, x.data() + x.size());
+  if (x.size() % 2 != 0)
+    return *upper;
+  return 0.5 * (*upper + *std::max_element(x.data(), upper));
+}
+
 //! standard normal density
 //! @param x evaluation points.
 //! @return matrix of pdf values.
