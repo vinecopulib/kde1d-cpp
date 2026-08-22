@@ -16,3 +16,16 @@ Rscript diagnostic/plot_boundary_diagnostics.R boundary-diagnostics.csv
 The executable is deliberately not registered with CTest. Its output is for
 comparing numerical behavior between revisions; stable invariants discovered
 through the sweep should be promoted to focused regression tests.
+
+The summary reports four complementary diagnostics:
+
+- PDF and CDF error against known distributions near the boundary;
+- equivariance when the same data are expressed at different scales;
+- agreement between left-bounded fits and reflected right-bounded fits;
+- sensitivity to the interpolation grid size.
+
+The metrics deliberately remain separate. Relative density error is not useful
+where the true density vanishes, while CDF error can remain small despite a
+severely unstable pointwise density. Candidate repairs should therefore be
+checked against both finite nonzero boundary densities and densities that tend
+to zero.

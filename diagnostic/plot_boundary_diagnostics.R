@@ -37,6 +37,39 @@ print(
   row.names = FALSE
 )
 
+left <- subset(results, scenario == "exponential-left")
+right <- subset(results, scenario == "exponential-right")
+reflection <- merge(
+  left,
+  right,
+  by = c("scale", "degree", "grid_size", "bandwidth", "position"),
+  suffixes = c("_left", "_right")
+)
+reflection$pdf_error <- abs(
+  reflection$scaled_pdf_left - reflection$scaled_pdf_right
+)
+reflection$cdf_error <- abs(
+  reflection$estimated_cdf_left + reflection$estimated_cdf_right - 1
+)
+cat("\nReflection-equivariance maxima\n")
+cat("PDF:", max(reflection$pdf_error), "CDF:", max(reflection$cdf_error), "\n")
+
+grid_summary <- aggregate(
+  cbind(scaled_pdf = scaled_pdf, estimated_cdf = estimated_cdf) ~
+    scenario + scale + degree + bandwidth + position,
+  data = subset(results, true_pdf > 0),
+  FUN = function(x) max(x) - min(x)
+)
+grid_summary$discrepancy <- pmax(
+  grid_summary$scaled_pdf,
+  grid_summary$estimated_cdf
+)
+cat("\nLargest grid-size discrepancies\n")
+print(
+  head(grid_summary[order(-grid_summary$discrepancy), ], 20L),
+  row.names = FALSE
+)
+
 pdf(sub("[.]csv$", ".pdf", args[[1]]))
 for (scenario_name in unique(results$scenario)) {
   selected <- subset(
