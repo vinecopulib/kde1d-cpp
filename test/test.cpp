@@ -167,6 +167,9 @@ TEST_CASE("discrete quantiles satisfy the generalized inverse", "[quantile]")
          quantiles.head(quantiles.size() - 1))
           .minCoeff() >= 0.0);
   CHECK((cumulative.array() + 1e-14 >= probabilities.array()).all());
+
+  Eigen::VectorXd levels = Eigen::VectorXd::LinSpaced(4, 0.0, 3.0);
+  CHECK(fit.quantile(fit.cdf(levels)).isApprox(levels));
 }
 
 TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")

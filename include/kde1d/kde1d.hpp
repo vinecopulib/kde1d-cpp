@@ -573,10 +573,9 @@ Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 
   auto p = cdf_discrete(lvs);
   auto quan = [&](const double& pp) {
-    size_t lv = 0;
-    while ((pp >= p(lv)) && (lv < nlevels - 1))
-      lv++;
-    return lvs(lv);
+    const double* level = std::lower_bound(p.data(), p.data() + p.size(), pp);
+    return lvs(std::min(static_cast<Eigen::Index>(level - p.data()),
+                        lvs.size() - 1));
   };
 
   return tools::unaryExpr_or_nan(x, quan);
