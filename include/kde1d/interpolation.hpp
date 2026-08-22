@@ -42,10 +42,12 @@ private:
   size_t find_cell(const double& x0) const;
   Eigen::Vector4d find_cell_coefs(const size_t& k) const;
   void update_cell_coefs();
+  void update_cumulative_integrals();
 
   Eigen::VectorXd grid_points_;
   Eigen::VectorXd values_;
   Eigen::Matrix<double, 4, Eigen::Dynamic> cell_coefs_;
+  Eigen::VectorXd cumulative_integrals_;
 };
 
 //! Constructor
@@ -72,13 +74,16 @@ inline InterpolationGrid::InterpolationGrid(const Eigen::VectorXd& grid_points,
 inline void
 InterpolationGrid::normalize(int times)
 {
-  double x_max = grid_points_(grid_points_.size() - 1);
-  double int_max;
   for (int k = 0; k < times; ++k) {
-    int_max = this->integrate(Eigen::VectorXd::Constant(1, x_max))(0);
-    values_ /= int_max;
+    double integral = 0.0;
+    for (Eigen::Index cell = 0; cell < grid_points_.size() - 1; ++cell) {
+      integral += cubic_integral(0.0, 1.0, find_cell_coefs(cell)) *
+                  (grid_points_(cell + 1) - grid_points_(cell));
+    }
+    values_ /= integral;
   }
   update_cell_coefs();
+  update_cumulative_integrals();
 }
 
 //! Interpolation
@@ -112,63 +117,26 @@ inline Eigen::VectorXd
 InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
 {
   Eigen::VectorXd res(x.size());
-  auto ord = tools::get_order(x);
-
-  // temporaries for the loop
-  Eigen::Vector4d tmp_coefs;
-  double new_int, tmp_eps, cum_int = 0.0;
-  size_t k = 0, m = grid_points_.size();
-  tmp_coefs = find_cell_coefs(0);
-  tmp_eps = (grid_points_(1) - grid_points_(0));
-
-  for (long i = 0; i < x.size(); ++i) {
-    double upr = x(ord(i));
-
-    if (std::isnan(upr)) {
-      res(ord(i)) = upr;
-      continue;
-    }
-    if (upr <= grid_points_(0)) {
-      res(ord(i)) = 0.0;
-      continue;
-    }
-
-    // go up the grid and integrate
-    while (k < m - 1) {
-      // halt loop if integration limit is in kth cell
-      if (upr < grid_points_(k + 1))
-        break;
-      // integrate over full cell
-      tmp_coefs = find_cell_coefs(k);
-      tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-      cum_int += cubic_integral(0.0, 1.0, tmp_coefs) * tmp_eps;
-      k++;
-    }
-
-    // integrate over partial cell
-    if (upr < grid_points_(m - 1)) { // only if still in interior
-      tmp_coefs = find_cell_coefs(k);
-      tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-      upr = (upr - grid_points_(k)) / tmp_eps;
-      new_int = cubic_integral(0.0, upr, tmp_coefs) * tmp_eps;
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (std::isnan(x(i))) {
+      res(i) = x(i);
+    } else if (x(i) <= grid_points_(0)) {
+      res(i) = 0.0;
+    } else if (x(i) >= grid_points_(grid_points_.size() - 1)) {
+      res(i) = cumulative_integrals_(grid_points_.size() - 1);
     } else {
-      new_int = 0.0;
+      const size_t cell = find_cell(x(i));
+      const double cell_width = grid_points_(cell + 1) - grid_points_(cell);
+      const double position = (x(i) - grid_points_(cell)) / cell_width;
+      res(i) = cumulative_integrals_(cell) +
+               cubic_integral(
+                 0.0, position, Eigen::Vector4d(cell_coefs_.col(cell))) *
+                 cell_width;
     }
-
-    res(ord(i)) = cum_int + new_int;
   }
 
-  if (!normalize)
-    return res;
-
-  // integrate until end
-  while (k < m - 1) {
-    tmp_coefs = find_cell_coefs(k);
-    tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-    cum_int += cubic_integral(0.0, 1.0, tmp_coefs) * tmp_eps;
-    k++;
-  }
-  return res / cum_int;
+  return normalize ? res / cumulative_integrals_(grid_points_.size() - 1)
+                   : res;
 }
 
 // ---------------- Utility functions for spline interpolation ----------------
@@ -283,6 +251,19 @@ InterpolationGrid::update_cell_coefs()
   cell_coefs_.resize(4, grid_points_.size() - 1);
   for (Eigen::Index k = 0; k < grid_points_.size() - 1; ++k)
     cell_coefs_.col(k) = find_cell_coefs(k);
+}
+
+inline void
+InterpolationGrid::update_cumulative_integrals()
+{
+  cumulative_integrals_ = Eigen::VectorXd::Zero(grid_points_.size());
+  for (Eigen::Index cell = 0; cell < grid_points_.size() - 1; ++cell) {
+    cumulative_integrals_(cell + 1) =
+      cumulative_integrals_(cell) +
+      cubic_integral(
+        0.0, 1.0, Eigen::Vector4d(cell_coefs_.col(cell))) *
+        (grid_points_(cell + 1) - grid_points_(cell));
+  }
 }
 
 } // end kde1d::interp
