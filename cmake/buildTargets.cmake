@@ -13,6 +13,10 @@ if(BUILD_TESTING)
     add_subdirectory(test)
 endif(BUILD_TESTING)
 
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
+endif(BUILD_BENCHMARKS)
+
 # Related to exports for linux/mac and code coverage
 ####
 # Installation
