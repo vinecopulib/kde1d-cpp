@@ -128,6 +128,22 @@ TEST_CASE("one-sided fits are scale equivariant",
   }
 }
 
+TEST_CASE("one-sided power grids do not explode on exponential data",
+          "[numerical-invariants][boundary-grid]")
+{
+  Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(500, 0.5 / 500.0, 1.0 - 0.5 / 500.0);
+  Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+  kde1d::Kde1d fit(0.0, NAN, "continuous");
+  fit.fit(observations);
+
+  Eigen::VectorXd boundary_density =
+    fit.pdf(Eigen::VectorXd::Constant(1, 0.0));
+  CHECK(fit.get_grid_points().maxCoeff() < 10.0 * observations.maxCoeff());
+  CHECK(std::isfinite(boundary_density(0)));
+  CHECK(boundary_density(0) > 0.0);
+}
+
 TEST_CASE("interpolation preserves nonuniform-grid reference values",
           "[interpolation][parity]")
 {

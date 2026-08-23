@@ -140,8 +140,10 @@ private:
   double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
-  // Regularizes one-sided log transforms in the units of the fitted data.
+  // Regularizes one-sided power transforms in the units of the fitted data.
   double boundary_offset_{ NAN };
+  // Makes one-sided transforms dimensionless and scale equivariant.
+  double boundary_scale_{ 1.0 };
   static constexpr double K0_ = 0.3989425;
 
   // private methods
@@ -363,16 +365,16 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
     else
       distances = xx.array() - xmin_;
     if (w.size() == 0) {
-      boundary_offset_ = 1e-5 * stats::median(distances);
+      boundary_scale_ = stats::median(distances);
     } else {
-      boundary_offset_ =
-        1e-5 * stats::quantile(
-                 distances, Eigen::VectorXd::Constant(1, 0.5), w)(0);
+      boundary_scale_ = stats::quantile(
+        distances, Eigen::VectorXd::Constant(1, 0.5), w)(0);
     }
-    if (!(boundary_offset_ > 0.0))
-      boundary_offset_ = 1e-5 * distances.maxCoeff();
-    if (!(boundary_offset_ > 0.0))
-      boundary_offset_ = 1e-5;
+    if (!(boundary_scale_ > 0.0))
+      boundary_scale_ = distances.maxCoeff();
+    if (!(boundary_scale_ > 0.0))
+      boundary_scale_ = 1.0;
+    boundary_offset_ = 1e-5 * boundary_scale_;
   }
 
   xx = boundary_transform(xx);
@@ -779,11 +781,17 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> log transform
-      x_new = (boundary_offset_ + x.array() - xmin_).log();
+      // left boundary -> power-3/4 transform
+      x_new = 4.0 * (((boundary_offset_ + x.array() - xmin_) /
+                      boundary_scale_)
+                       .pow(0.25) -
+                     std::pow(boundary_offset_ / boundary_scale_, 0.25));
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> negative log transform
-      x_new = (boundary_offset_ + xmax_ - x.array()).log();
+      // right boundary -> reflected power-3/4 transform
+      x_new = 4.0 * (((boundary_offset_ + xmax_ - x.array()) /
+                      boundary_scale_)
+                       .pow(0.25) -
+                     std::pow(boundary_offset_ / boundary_scale_, 0.25));
     } else {
       // no boundary -> no transform
     }
@@ -793,11 +801,19 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       auto rng = xmax_ - xmin_;
       x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> log transform
-      x_new = x.array().exp() + xmin_ - boundary_offset_;
+      // left boundary -> inverse power-3/4 transform
+      x_new = boundary_scale_ *
+                (x.array() / 4.0 +
+                 std::pow(boundary_offset_ / boundary_scale_, 0.25))
+                  .pow(4) +
+              xmin_ - boundary_offset_;
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> negative log transform
-      x_new = -(x.array().exp() - xmax_ - boundary_offset_);
+      // right boundary -> inverse reflected power-3/4 transform
+      x_new = xmax_ + boundary_offset_ -
+              boundary_scale_ *
+                (x.array() / 4.0 +
+                 std::pow(boundary_offset_ / boundary_scale_, 0.25))
+                  .pow(4);
     } else {
       // no boundary -> no transform
     }
@@ -827,11 +843,15 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
     corr_term /= (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = 1.0 / corr_term.array();
   } else if (!std::isnan(xmin_)) {
-    // left boundary -> log transform
-    corr_term = 1.0 / (boundary_offset_ + x.array() - xmin_);
+    // left boundary -> power-3/4 transform
+    corr_term = ((boundary_offset_ + x.array() - xmin_) / boundary_scale_)
+                  .pow(-0.75) /
+                boundary_scale_;
   } else if (!std::isnan(xmax_)) {
-    // right boundary -> negative log transform
-    corr_term = 1.0 / (boundary_offset_ + xmax_ - x.array());
+    // right boundary -> reflected power-3/4 transform
+    corr_term = ((boundary_offset_ + xmax_ - x.array()) / boundary_scale_)
+                  .pow(-0.75) /
+                boundary_scale_;
   } else {
     // no boundary -> no transform
     corr_term.fill(1.0);
