@@ -29,3 +29,7 @@ where the true density vanishes, while CDF error can remain small despite a
 severely unstable pointwise density. Candidate repairs should therefore be
 checked against both finite nonzero boundary densities and densities that tend
 to zero.
+
+The separate transformation-boundary investigation, its retained simulation
+results, and its current recommendations live in
+[`boundary-repair/`](boundary-repair/README.md).
