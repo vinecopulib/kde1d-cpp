@@ -253,6 +253,37 @@ TEST_CASE("two-sided exploding endpoints retain the bulk fit",
   CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
 }
 
+TEST_CASE("unsupported expert options retain the transformed bulk fit",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+  const Eigen::VectorXd weights =
+    Eigen::VectorXd::LinSpaced(observations.size(), 0.5, 1.5);
+
+  Kde1d weighted(0.0, NAN, "continuous");
+  weighted.fit(observations, weights);
+  Kde1d weighted_bulk(0.0, NAN, "continuous", 1.0, weighted.get_bandwidth());
+  weighted_bulk.fit(observations, weights);
+  CHECK(weighted.get_values().isApprox(weighted_bulk.get_values(), 1e-12));
+  CHECK(weighted.get_edf() == Approx(weighted_bulk.get_edf()).epsilon(1e-12));
+
+  Kde1d linear(0.0, NAN, "continuous", 1.0, NAN, 1);
+  linear.fit(observations);
+  Kde1d linear_bulk(0.0, NAN, "continuous", 1.0, linear.get_bandwidth(), 1);
+  linear_bulk.fit(observations);
+  CHECK(linear.get_values().isApprox(linear_bulk.get_values(), 1e-12));
+  CHECK(linear.get_edf() == Approx(linear_bulk.get_edf()).epsilon(1e-12));
+
+  Kde1d small(0.0, NAN, "continuous");
+  small.fit(observations.head(15));
+  Kde1d small_bulk(0.0, NAN, "continuous", 1.0, small.get_bandwidth());
+  small_bulk.fit(observations.head(15));
+  CHECK(small.get_values().isApprox(small_bulk.get_values(), 1e-12));
+  CHECK(small.get_edf() == Approx(small_bulk.get_edf()).epsilon(1e-12));
+}
+
 TEST_CASE("finite support truncates density", "[finite-support]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.0, 1.0);
