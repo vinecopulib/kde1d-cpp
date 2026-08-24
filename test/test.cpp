@@ -167,6 +167,31 @@ TEST_CASE("one-sided finite endpoints use the boundary expert",
   CHECK(fit.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
 }
 
+TEST_CASE("boundary experts can be disabled", "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+
+  Kde1d default_fit(0.0, NAN, "continuous");
+  default_fit.fit(observations);
+  Kde1d enabled(0.0, NAN, "continuous", 1.0, NAN, 2, 400, true);
+  enabled.fit(observations);
+  Kde1d disabled(0.0, NAN, "continuous", 1.0, NAN, 2, 400, false);
+  disabled.fit(observations);
+  Kde1d disabled_manual(
+    0.0, NAN, "continuous", 1.0, disabled.get_bandwidth(), 2, 400, false);
+  disabled_manual.fit(observations);
+
+  CHECK(default_fit.get_boundary_repair());
+  CHECK(enabled.get_boundary_repair());
+  CHECK_FALSE(disabled.get_boundary_repair());
+  CHECK(default_fit.get_values().isApprox(enabled.get_values(), 1e-12));
+  CHECK_FALSE(default_fit.get_values().isApprox(disabled.get_values(), 1e-6));
+  CHECK(disabled.get_values().isApprox(disabled_manual.get_values(), 1e-12));
+  CHECK(disabled.str().find("boundary_repair=false") != std::string::npos);
+}
+
 TEST_CASE("one-sided vanishing endpoints retain the bulk fit",
           "[boundary-expert]")
 {
@@ -625,6 +650,7 @@ TEST_CASE("bandwidth selection on refit", "[bandwidth][refit]")
     CHECK(std::isnan(from_grid.get_bandwidth()));
     CHECK(from_grid.get_multiplier() == Approx(1.0));
     CHECK(from_grid.get_degree() == 2);
+    CHECK(from_grid.get_boundary_repair());
   }
 }
 

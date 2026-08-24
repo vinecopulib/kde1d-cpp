@@ -18,7 +18,9 @@ two with at least 16 observations and effective sample size at least 16. Public
 case weights and manual bandwidths are supported. Apply the bandwidth
 multiplier to every expert bandwidth after selection and flooring.
 
-Do not add a public method switch or another fitted-object representation.
+Expose boundary repair as a constructor option that defaults to enabled. When
+disabled, retain the transformed bulk estimator. Do not add another fitted-
+object representation.
 
 ## Minimal integration point
 

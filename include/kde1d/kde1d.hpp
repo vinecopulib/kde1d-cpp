@@ -27,7 +27,8 @@ public:
         double multiplier = 1.0,
         double bandwidth = NAN,
         size_t degree = 2,
-        size_t grid_size = 400);
+        size_t grid_size = 400,
+        bool boundary_repair = true);
 
   Kde1d(double xmin = NAN,
         double xmax = NAN,
@@ -35,7 +36,8 @@ public:
         double multiplier = 1.0,
         double bandwidth = NAN,
         size_t degree = 2,
-        size_t grid_size = 400);
+        size_t grid_size = 400,
+        bool boundary_repair = true);
 
   Kde1d(const interp::InterpolationGrid& grid,
         double xmin,
@@ -92,6 +94,8 @@ public:
   //! @return the requested number of grid points (the value passed
   //!   to the constructor).
   size_t get_grid_size() const { return grid_size_; }
+  //! @return whether boundary-expert repair is enabled.
+  bool get_boundary_repair() const { return boundary_repair_; }
   //! @return the actual number of grid points after fitting (which
   //!   may differ slightly from `get_grid_size()` due to
   //!   boundary-snapping in `finalize_grid()`).
@@ -113,7 +117,9 @@ public:
        << "xmin=" << xmin_ << ", xmax=" << xmax_ << ", type='"
        << this->as_str(type_) << "'"
        << ", bandwidth=" << bandwidth_ << ", multiplier=" << multiplier_
-       << ", degree=" << degree_ << ")";
+       << ", degree=" << degree_
+       << ", boundary_repair=" << (boundary_repair_ ? "true" : "false")
+       << ")";
     return ss.str();
   }
 
@@ -143,6 +149,7 @@ private:
   double bandwidth_{ NAN };
   size_t degree_{ 2 };
   size_t grid_size_;
+  bool boundary_repair_{ true };
   double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
@@ -221,13 +228,16 @@ private:
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
+//! @param boundary_repair whether to use boundary experts at finite support
+//!   endpoints.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     VarType type,
                     double multiplier,
                     double bandwidth,
                     size_t degree,
-                    size_t grid_size)
+                    size_t grid_size,
+                    bool boundary_repair)
   : xmin_(xmin)
   , xmax_(xmax)
   , type_(type)
@@ -236,6 +246,7 @@ inline Kde1d::Kde1d(double xmin,
   , bandwidth_(bandwidth)
   , degree_(degree)
   , grid_size_(grid_size)
+  , boundary_repair_(boundary_repair)
 {
   this->check_xmin_xmax(xmin, xmax);
   if (multiplier <= 0.0) {
@@ -295,20 +306,24 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
+//! @param boundary_repair whether to use boundary experts at finite support
+//!   endpoints.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     std::string type,
                     double multiplier,
                     double bandwidth,
                     size_t degree,
-                    size_t grid_size)
+                    size_t grid_size,
+                    bool boundary_repair)
   : Kde1d(xmin,
           xmax,
           this->as_enum(type),
           multiplier,
           bandwidth,
           degree,
-          grid_size)
+          grid_size,
+          boundary_repair)
 {
 }
 
@@ -346,7 +361,8 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
-  const bool use_boundary_repair = type_ == VarType::continuous &&
+  const bool use_boundary_repair = boundary_repair_ &&
+                                   type_ == VarType::continuous &&
                                    xx.size() >= 16 &&
                                    (!std::isnan(xmin_) || !std::isnan(xmax_));
   Eigen::VectorXd boundary_observations;
