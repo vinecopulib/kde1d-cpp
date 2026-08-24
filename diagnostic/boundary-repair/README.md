@@ -55,7 +55,7 @@ offset transform, oversmoothed tail expert, or cross-validation selector.
 - `results/` and `plots/`: corresponding 100-replication outputs.
 - `RESULTS.md`: final numerical conclusions.
 - `HANDOFF.md`: concise continuation state.
-- `NATIVE_CPP.md`: native C++ implementation plan.
+- `NATIVE_CPP.md`: pointer to the shared one- and two-sided native roadmap.
 
 Run from the R-package root:
 

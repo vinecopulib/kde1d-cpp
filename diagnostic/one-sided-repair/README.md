@@ -35,6 +35,7 @@ have been removed.
   `plots/local-floor-fraction-ablation.pdf`: current tuning evidence.
 - `RESULTS.md`: numerical conclusions.
 - `HANDOFF.md`: implementation state and next steps.
+- `NATIVE_CPP.md`: shared one- and two-sided native implementation roadmap.
 
 Run from the R-package root:
 
