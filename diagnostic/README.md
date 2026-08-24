@@ -36,3 +36,7 @@ results, and its current recommendations live in
 
 The follow-up for supports with exactly one finite endpoint lives in
 [`one-sided-repair/`](one-sided-repair/README.md).
+
+The shared native implementation is evaluated by
+[`validate_native_boundary_experts.R`](validate_native_boundary_experts.R),
+with current results summarized in [`NATIVE_RESULTS.md`](NATIVE_RESULTS.md).
