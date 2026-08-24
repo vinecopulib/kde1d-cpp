@@ -1,5 +1,6 @@
-# Evaluate one native kde1d revision. Run once at the baseline commit and once
-# at the candidate commit, then compare rows by scenario, size, and replication.
+# Evaluate one native kde1d method. Install the pre-PR revision for `pre-pr`;
+# install the candidate revision for `bulk` and `expert`. The pre-PR one-sided
+# fit is the production log-transform estimator, not a local emulation of it.
 
 arguments <- commandArgs(trailingOnly = TRUE)
 if (length(arguments) < 2L || length(arguments) > 4L) {
@@ -12,6 +13,9 @@ library(kde1d)
 
 method <- arguments[[1L]]
 output_file <- arguments[[2L]]
+if (!method %in% c("pre-pr", "bulk", "expert")) {
+  stop("method must be one of: pre-pr, bulk, expert")
+}
 replications <- if (length(arguments) >= 3L) {
   as.integer(arguments[[3L]])
 } else {
@@ -23,6 +27,14 @@ if (!is.finite(replications) || replications < 2L) {
 
 integrate_values <- function(points, values) {
   sum(diff(points) * (values[-length(values)] + values[-1L]) / 2)
+}
+
+fit_kde1d <- function(observations, xmin = NA_real_, xmax = NA_real_) {
+  arguments <- list(x = observations, xmin = xmin, xmax = xmax)
+  if (method != "pre-pr") {
+    arguments$boundary_repair <- method == "expert"
+  }
+  do.call(kde1d, arguments)
 }
 
 one_sided <- list(
@@ -62,6 +74,8 @@ two_sided <- list(
   beta_2_2 = c(2, 2)
 )
 sample_sizes <- c(25L, 100L, 1000L, 2000L)
+one_sided_scales <- c(1e-4, 1, 1e4)
+one_sided_directions <- c("lower", "upper")
 result_rows <- list()
 summary_rows <- list()
 
@@ -87,44 +101,69 @@ summarize_estimates <- function(points, estimates, truth, boundary) {
 
 for (scenario_index in seq_along(one_sided)) {
   scenario <- one_sided[[scenario_index]]
-  points <- sort(unique(c(
+  base_points <- sort(unique(c(
     1e-10,
     scenario$quantile(10^seq(-8, -1, length.out = 100L)),
     scenario$quantile(seq(0.1, 0.9999, length.out = 401L))
   )))
-  truth <- scenario$density(points)
-  boundary <- points <= scenario$quantile(0.1)
-  for (sample_size in sample_sizes) {
-    estimates <- matrix(NA_real_, length(points), replications)
-    for (replication in seq_len(replications)) {
-      set.seed(20260824L + 100000L * scenario_index +
-                 1000L * match(sample_size, sample_sizes) + replication)
-      fit <- kde1d(scenario$random(sample_size), xmin = 0)
-      estimates[, replication] <- dkde1d(points, fit)
-      result_rows[[length(result_rows) + 1L]] <- data.frame(
-        support = "one-sided",
-        scenario = names(one_sided)[[scenario_index]],
-        sample_size = sample_size,
-        replication = replication,
-        method = method,
-        global_ise = integrate_values(
-          points, (estimates[, replication] - truth)^2
-        ),
-        boundary_ise = integrate_values(
-          points[boundary],
-          (estimates[boundary, replication] - truth[boundary])^2
-        ),
-        edf = fit$edf,
-        loglik = fit$loglik
-      )
+  for (scale_index in seq_along(one_sided_scales)) {
+    scale <- one_sided_scales[[scale_index]]
+    scaled_points <- scale * base_points
+    scaled_truth <- scenario$density(base_points) / scale
+    for (direction_index in seq_along(one_sided_directions)) {
+      direction <- one_sided_directions[[direction_index]]
+      if (direction == "lower") {
+        points <- scaled_points
+        truth <- scaled_truth
+        boundary <- points <= scale * scenario$quantile(0.1)
+      } else {
+        points <- -rev(scaled_points)
+        truth <- rev(scaled_truth)
+        boundary <- points >= -scale * scenario$quantile(0.1)
+      }
+      for (sample_size in sample_sizes) {
+        estimates <- matrix(NA_real_, length(points), replications)
+        for (replication in seq_len(replications)) {
+          set.seed(20260824L + 10000000L * scenario_index +
+                     1000000L * scale_index + 100000L * direction_index +
+                     1000L * match(sample_size, sample_sizes) + replication)
+          observations <- scale * scenario$random(sample_size)
+          if (direction == "lower") {
+            fit <- fit_kde1d(observations, xmin = 0)
+          } else {
+            fit <- fit_kde1d(-observations, xmax = 0)
+          }
+          estimates[, replication] <- dkde1d(points, fit)
+          result_rows[[length(result_rows) + 1L]] <- data.frame(
+            support = "one-sided",
+            direction = direction,
+            scale = scale,
+            scenario = names(one_sided)[[scenario_index]],
+            sample_size = sample_size,
+            replication = replication,
+            method = method,
+            global_ise = integrate_values(
+              points, (estimates[, replication] - truth)^2
+            ),
+            boundary_ise = integrate_values(
+              points[boundary],
+              (estimates[boundary, replication] - truth[boundary])^2
+            ),
+            edf = fit$edf,
+            loglik = fit$loglik
+          )
+        }
+        summary_rows[[length(summary_rows) + 1L]] <- data.frame(
+          support = "one-sided",
+          direction = direction,
+          scale = scale,
+          scenario = names(one_sided)[[scenario_index]],
+          sample_size = sample_size,
+          method = method,
+          as.list(summarize_estimates(points, estimates, truth, boundary))
+        )
+      }
     }
-    summary_rows[[length(summary_rows) + 1L]] <- data.frame(
-      support = "one-sided",
-      scenario = names(one_sided)[[scenario_index]],
-      sample_size = sample_size,
-      method = method,
-      as.list(summarize_estimates(points, estimates, truth, boundary))
-    )
   }
 }
 
@@ -142,7 +181,7 @@ for (scenario_index in seq_along(two_sided)) {
     for (replication in seq_len(replications)) {
       set.seed(20260825L + 100000L * scenario_index +
                  1000L * match(sample_size, sample_sizes) + replication)
-      fit <- kde1d(
+      fit <- fit_kde1d(
         rbeta(sample_size, shapes[[1L]], shapes[[2L]]),
         xmin = 0,
         xmax = 1
@@ -150,6 +189,8 @@ for (scenario_index in seq_along(two_sided)) {
       estimates[, replication] <- dkde1d(points, fit)
       result_rows[[length(result_rows) + 1L]] <- data.frame(
         support = "two-sided",
+        direction = NA_character_,
+        scale = 1,
         scenario = names(two_sided)[[scenario_index]],
         sample_size = sample_size,
         replication = replication,
@@ -167,6 +208,8 @@ for (scenario_index in seq_along(two_sided)) {
     }
     summary_rows[[length(summary_rows) + 1L]] <- data.frame(
       support = "two-sided",
+      direction = NA_character_,
+      scale = 1,
       scenario = names(two_sided)[[scenario_index]],
       sample_size = sample_size,
       method = method,

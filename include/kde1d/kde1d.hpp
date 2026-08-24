@@ -16,7 +16,13 @@ enum class VarType
   zero_inflated
 };
 
-//! Local-polynomial density estimation in 1-d.
+//! Local-polynomial density estimation in one dimension.
+//!
+//! Continuous fits use a transformed local-likelihood estimate as their bulk
+//! component. When `boundary_repair` is enabled, finite support endpoints may
+//! additionally use a nonnegative blend of local-linear and local-quadratic
+//! boundary kernels. See @ref overview-continuous for the transforms,
+//! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
 class Kde1d
 {
 public:
@@ -84,9 +90,10 @@ public:
   double get_prob0() const { return prob0_; }
   //! @return the bandwidth multiplier supplied at construction.
   double get_multiplier() const { return multiplier_; }
-  //! @return the bandwidth used by the most recent `fit()`, before the
-  //!   multiplier is applied. Equals the bandwidth supplied at construction
-  //!   when one was, and is `NaN` when none was and `fit()` has not run.
+  //! @return the transformed-scale bulk bandwidth used by the most recent
+  //!   `fit()`, before the multiplier is applied. Equals the bandwidth
+  //!   supplied at construction when one was, and is `NaN` when none was and
+  //!   `fit()` has not run. Boundary experts select a separate bandwidth.
   double get_bandwidth() const { return bandwidth_; }
   //! @return the polynomial degree used by the local-likelihood
   //!   estimator (0, 1, or 2).
@@ -94,7 +101,7 @@ public:
   //! @return the requested number of grid points (the value passed
   //!   to the constructor).
   size_t get_grid_size() const { return grid_size_; }
-  //! @return whether boundary-expert repair is enabled.
+  //! @return whether boundary experts are eligible at finite endpoints.
   bool get_boundary_repair() const { return boundary_repair_; }
   //! @return the actual number of grid points after fitting (which
   //!   may differ slightly from `get_grid_size()` due to
@@ -276,8 +283,8 @@ private:
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
-//! @param boundary_repair whether to use boundary experts at finite support
-//!   endpoints.
+//! @param boundary_repair whether finite endpoints are eligible for boundary
+//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     VarType type,
@@ -354,8 +361,8 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
-//! @param boundary_repair whether to use boundary experts at finite support
-//!   endpoints.
+//! @param boundary_repair whether finite endpoints are eligible for boundary
+//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     std::string type,
@@ -873,13 +880,13 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> power-3/4 transform
+      // left boundary -> regularized fourth-root transform
       x_new = 4.0 * (((boundary_offset_ + x.array() - xmin_) /
                       boundary_scale_)
                        .pow(0.25) -
                      std::pow(boundary_offset_ / boundary_scale_, 0.25));
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> reflected power-3/4 transform
+      // right boundary -> reflected regularized fourth-root transform
       x_new = 4.0 * (((boundary_offset_ + xmax_ - x.array()) /
                       boundary_scale_)
                        .pow(0.25) -
@@ -893,14 +900,14 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       auto rng = xmax_ - xmin_;
       x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> inverse power-3/4 transform
+      // left boundary -> inverse regularized fourth-root transform
       x_new = boundary_scale_ *
                 (x.array() / 4.0 +
                  std::pow(boundary_offset_ / boundary_scale_, 0.25))
                   .pow(4) +
               xmin_ - boundary_offset_;
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> inverse reflected power-3/4 transform
+      // right boundary -> inverse reflected regularized fourth-root transform
       x_new = xmax_ + boundary_offset_ -
               boundary_scale_ *
                 (x.array() / 4.0 +
@@ -935,12 +942,12 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
     corr_term /= (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = 1.0 / corr_term.array();
   } else if (!std::isnan(xmin_)) {
-    // left boundary -> power-3/4 transform
+    // left boundary -> fourth-root-transform Jacobian
     corr_term = ((boundary_offset_ + x.array() - xmin_) / boundary_scale_)
                   .pow(-0.75) /
                 boundary_scale_;
   } else if (!std::isnan(xmax_)) {
-    // right boundary -> reflected power-3/4 transform
+    // right boundary -> reflected fourth-root-transform Jacobian
     corr_term = ((boundary_offset_ + xmax_ - x.array()) / boundary_scale_)
                   .pow(-0.75) /
                 boundary_scale_;
@@ -1420,8 +1427,7 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
 //  Bandwidth for Kernel Density Estimation
 //' @param x vector of observations
 //' @param bandwidth bandwidth parameter, NA for automatic selection.
-//' @param multiplier bandwidth multiplieriplier.
-//' @param discrete whether a jittered estimate is computed.
+//' @param multiplier bandwidth multiplier.
 //' @param weights vector of weights for each observation (can be empty).
 //' @param degree polynomial degree.
 //' @return the selected bandwidth
