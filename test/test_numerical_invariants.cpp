@@ -85,20 +85,23 @@ TEST_CASE("finite-support fits are scale equivariant",
   Eigen::VectorXd points(10);
   points << 0.0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 0.1, 0.5, 0.9, 1.0;
 
-  kde1d::Kde1d reference(0.0, 1.0, "continuous", 1.0, 0.3, 2, 400);
-  reference.fit(observations);
+  for (size_t degree = 0; degree < 3; ++degree) {
+    kde1d::Kde1d reference(
+      0.0, 1.0, "continuous", 1.0, 0.3, degree, 400);
+    reference.fit(observations);
 
-  for (double scale : { 1e-4, 1e4 }) {
-    INFO("scale=" << scale);
-    kde1d::Kde1d scaled(
-      0.0, scale, "continuous", 1.0, 0.3, 2, 400);
-    scaled.fit(observations * scale);
+    for (double scale : { 1e-4, 1e4 }) {
+      INFO("degree=" << degree << ", scale=" << scale);
+      kde1d::Kde1d scaled(
+        0.0, scale, "continuous", 1.0, 0.3, degree, 400);
+      scaled.fit(observations * scale);
 
-    CHECK((scaled.get_grid_points() / scale)
-            .isApprox(reference.get_grid_points(), 1e-11));
-    CHECK((scaled.pdf(points * scale) * scale)
-            .isApprox(reference.pdf(points), 1e-10));
-    CHECK(scaled.cdf(points * scale).isApprox(reference.cdf(points), 1e-10));
+      CHECK((scaled.get_grid_points() / scale)
+              .isApprox(reference.get_grid_points(), 1e-11));
+      CHECK((scaled.pdf(points * scale) * scale)
+              .isApprox(reference.pdf(points), 1e-10));
+      CHECK(scaled.cdf(points * scale).isApprox(reference.cdf(points), 1e-10));
+    }
   }
 }
 
@@ -111,20 +114,23 @@ TEST_CASE("one-sided fits are scale equivariant",
   Eigen::VectorXd points(10);
   points << 0.0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 0.1, 0.5, 1.0, 5.0;
 
-  kde1d::Kde1d reference(0.0, NAN, "continuous", 1.0, 0.3, 2, 400);
-  reference.fit(observations);
+  for (size_t degree = 0; degree < 3; ++degree) {
+    kde1d::Kde1d reference(
+      0.0, NAN, "continuous", 1.0, 0.3, degree, 400);
+    reference.fit(observations);
 
-  for (double scale : { 1e-4, 1e4 }) {
-    INFO("scale=" << scale);
-    kde1d::Kde1d scaled(
-      0.0, NAN, "continuous", 1.0, 0.3, 2, 400);
-    scaled.fit(observations * scale);
+    for (double scale : { 1e-4, 1e4 }) {
+      INFO("degree=" << degree << ", scale=" << scale);
+      kde1d::Kde1d scaled(
+        0.0, NAN, "continuous", 1.0, 0.3, degree, 400);
+      scaled.fit(observations * scale);
 
-    CHECK((scaled.get_grid_points() / scale)
-            .isApprox(reference.get_grid_points(), 1e-11));
-    CHECK((scaled.pdf(points * scale) * scale)
-            .isApprox(reference.pdf(points), 1e-10));
-    CHECK(scaled.cdf(points * scale).isApprox(reference.cdf(points), 1e-10));
+      CHECK((scaled.get_grid_points() / scale)
+              .isApprox(reference.get_grid_points(), 1e-11));
+      CHECK((scaled.pdf(points * scale) * scale)
+              .isApprox(reference.pdf(points), 1e-10));
+      CHECK(scaled.cdf(points * scale).isApprox(reference.cdf(points), 1e-10));
+    }
   }
 }
 

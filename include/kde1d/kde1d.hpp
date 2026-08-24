@@ -347,7 +347,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   tools::remove_nans(xx, w);
 
   const bool use_boundary_repair = type_ == VarType::continuous &&
-                                   xx.size() >= 16 && degree_ == 2 &&
+                                   xx.size() >= 16 &&
                                    (!std::isnan(xmin_) || !std::isnan(xmax_));
   Eigen::VectorXd boundary_observations;
   if (use_boundary_repair)

@@ -13,20 +13,19 @@ path:
 The existing transformed estimator remains the bulk component in both cases.
 Unbounded continuous, discrete, and zero-inflated behavior remains unchanged.
 
-The production estimator activates for degree-two continuous fits with at least
-16 observations and effective sample size at least 16. Public case weights and
-manual bandwidths are supported. Nondefault degrees retain the transformed
-bulk estimator pending separate evaluation. Apply the bandwidth multiplier to
-every expert bandwidth after selection and flooring.
+The production estimator activates for continuous fits of degrees zero through
+two with at least 16 observations and effective sample size at least 16. Public
+case weights and manual bandwidths are supported. Apply the bandwidth
+multiplier to every expert bandwidth after selection and flooring.
 
 Do not add a public method switch or another fitted-object representation.
 
 ## Minimal integration point
 
 Call the repair coordinator only when `type_ == VarType::continuous`, at least
-one support bound is finite, at least 16 cleaned observations remain, and
-`degree_ == 2`. The coordinator additionally retains the bulk fit when the
-effective sample size is below 16.
+one support bound is finite, and at least 16 cleaned observations remain. The
+coordinator additionally retains the bulk fit when the effective sample size is
+below 16.
 
 Keep the current body of `Kde1d::fit()` through construction of the normalized
 bulk `InterpolationGrid`. Preserve the cleaned observations on their original
@@ -319,22 +318,14 @@ existing bulk bandwidth selector interprets public weights through effective
 sample size rather than as frequency counts. Supporting frequency weights
 would require a separate change to the bulk estimator's weight semantics.
 
-### Required follow-up: degrees zero and one
+### Degrees zero and one
 
-Keep boundary-expert activation for `degree_ < 2` as an important open task.
-The current estimator must continue to retain the transformed bulk fit for
-these degrees until this is evaluated. Compare at least:
-
-- retaining the averaged local-linear/local-quadratic boundary expert for all
-  bulk degrees;
-- matching the endpoint expert to the requested bulk degree;
-- using local linear at the endpoint for both degree-zero and degree-one bulk
-  fits.
-
-Evaluate global and boundary ISE, bias and variance, visual boundary stability,
-EDF behavior, and runtime for both support types, including weighted and manual-
-bandwidth fits. Do not activate degrees zero or one based only on API symmetry;
-the selected degree-two expert deliberately averages degrees one and two.
+The same averaged local-linear/local-quadratic boundary expert is used for all
+three bulk degrees. It outperformed matching-order and local-linear-only
+alternatives in global and boundary ISE. The gains persisted for weighted and
+manual-bandwidth fits, and boundary scale equivariance is tested for every
+degree. Degree zero primarily trades substantially lower boundary bias for a
+small one-sided variance increase; degree one reduces both bias and variance.
 
 ## Native tests
 
@@ -350,9 +341,8 @@ Shared coverage:
 - scaling over several orders of magnitude;
 - ties, observations exactly at an endpoint, small samples, and nearly
   degenerate samples;
-- regression coverage proving that unbounded, discrete, zero-inflated,
-  weighted, fixed-bandwidth, and nondefault-degree fits retain the current
-  path;
+- regression coverage for unbounded, discrete, zero-inflated, weighted,
+  fixed-bandwidth, and nondefault-degree fits;
 - fit-time benchmarks at representative $n$ values.
 
 One-sided coverage:
