@@ -121,6 +121,12 @@ protected:
   void set_interpolation_grid(const interp::InterpolationGrid& grid);
 
 private:
+  struct BoundaryComponent
+  {
+    Eigen::VectorXd density;
+    Eigen::VectorXd response;
+  };
+
   // data members
   interp::InterpolationGrid grid_;
   double xmin_;
@@ -185,6 +191,16 @@ private:
                           double multiplier,
                           size_t degree,
                           const Eigen::VectorXd& weights) const;
+  bool is_finite_endpoint(Eigen::VectorXd distances) const;
+  BoundaryComponent fit_boundary_component(
+    const Eigen::VectorXd& distances,
+    const Eigen::VectorXd& evaluation_distances,
+    const Eigen::VectorXd& bandwidth_weights,
+    double floor_fraction,
+    size_t degree) const;
+  void repair_boundaries(const Eigen::VectorXd& observations,
+                         const Eigen::VectorXd& grid_points,
+                         Eigen::VectorXd& influences);
 
   std::string as_str(VarType type) const;
   VarType as_enum(std::string type) const;
@@ -329,6 +345,17 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
+  // Nonconstant case weights and manual bandwidths need separate expert
+  // semantics; constant weights are equivalent to an unweighted sample.
+  const bool unweighted = w.size() == 0 || w.minCoeff() == w.maxCoeff();
+  const bool repair_one_sided = type_ == VarType::continuous &&
+                                xx.size() >= 16 && unweighted &&
+                                std::isnan(bandwidth_spec_) && degree_ == 2 &&
+                                (std::isnan(xmin_) != std::isnan(xmax_));
+  Eigen::VectorXd boundary_observations;
+  if (repair_one_sided)
+    boundary_observations = xx;
+
   if (w.size() > 0) {
     w /= w.mean();
   }
@@ -392,9 +419,15 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // order grid points from left to right
   grid_points = finalize_grid(grid_points);
 
+  Eigen::VectorXd influences = fitted.col(1);
+  if (std::isnan(xmin_) && !std::isnan(xmax_))
+    influences.reverseInPlace();
+
   // construct interpolation grid
   // (3 iterations for normalization to a proper density)
   grid_ = interp::InterpolationGrid(grid_points, values, 3);
+  if (repair_one_sided)
+    repair_boundaries(boundary_observations, grid_points, influences);
 
   // calculate log-likelihood of final estimate
   xx = boundary_transform(xx, true);
@@ -415,9 +448,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   }
 
   // calculate effective degrees of freedom
-  Eigen::VectorXd influences = fitted.col(1).cwiseMin(3.0).cwiseMax(0);
-  if (std::isnan(xmin_) && !std::isnan(xmax_))
-    influences.reverseInPlace();
+  influences = influences.cwiseMin(3.0).cwiseMax(0);
   interp::InterpolationGrid infl_grid(grid_points, influences, 0);
   influences = infl_grid.interpolate(xx).array();
   edf_ = influences.sum() + static_cast<double>(prob0_ > 0);
@@ -915,6 +946,237 @@ Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
   }
 
   return grid_points;
+}
+
+//! Classifies a support endpoint from the power law of its closest order
+//! statistics. Ambiguous and numerically degenerate cases retain the bulk fit.
+inline bool
+Kde1d::is_finite_endpoint(Eigen::VectorXd distances) const
+{
+  std::sort(distances.data(), distances.data() + distances.size());
+  const size_t tail_count =
+    std::min(static_cast<size_t>(distances.size() - 1),
+             static_cast<size_t>(std::ceil(2.0 * std::sqrt(distances.size()))));
+  const double threshold = distances(tail_count);
+  if (!(threshold > 0.0) || !std::isfinite(threshold))
+    return false;
+
+  double log_sum = 0.0;
+  const double distance_floor =
+    std::numeric_limits<double>::epsilon() * threshold;
+  for (size_t index = 0; index < tail_count; ++index) {
+    log_sum += std::log(threshold / std::max(distances(index), distance_floor));
+  }
+  if (!(log_sum > 0.0) || !std::isfinite(log_sum))
+    return false;
+
+  const double tail_index = static_cast<double>(tail_count) / log_sum;
+  // 1.64485 is the 95% standard-normal quantile used by the R selector.
+  return tail_index >= 0.9 &&
+         tail_index * (1.0 - 1.6448536269514722 / std::sqrt(tail_count)) <= 1.0;
+}
+
+//! Fits one Gaussian local-polynomial endpoint component. Targeting weights
+//! select its bandwidth only; equal observation contributions preserve the
+//! original density estimand.
+inline Kde1d::BoundaryComponent
+Kde1d::fit_boundary_component(const Eigen::VectorXd& distances,
+                              const Eigen::VectorXd& evaluation_distances,
+                              const Eigen::VectorXd& bandwidth_weights,
+                              double floor_fraction,
+                              size_t degree) const
+{
+  bandwidth::PluginBandwidthSelector selector(distances, bandwidth_weights);
+  double bandwidth = selector.select_bandwidth(degree);
+
+  Eigen::VectorXd ordered_distances = distances;
+  std::sort(ordered_distances.data(),
+            ordered_distances.data() + ordered_distances.size());
+  const Eigen::Index floor_count = std::min<Eigen::Index>(
+    distances.size(),
+    std::max<Eigen::Index>(
+      4,
+      static_cast<Eigen::Index>(std::ceil(floor_fraction * distances.size()))));
+  bandwidth::PluginBandwidthSelector floor_selector(
+    ordered_distances.head(floor_count));
+  bandwidth =
+    std::max(bandwidth, floor_selector.select_bandwidth(degree)) * multiplier_;
+  if (!(bandwidth > 0.0) || !std::isfinite(bandwidth))
+    return {};
+
+  BoundaryComponent component{ Eigen::VectorXd(evaluation_distances.size()),
+                               Eigen::VectorXd(evaluation_distances.size()) };
+  for (Eigen::Index row = 0; row < evaluation_distances.size(); ++row) {
+    const double boundary_position = evaluation_distances(row) / bandwidth;
+    const double normal_density =
+      K0_ * std::exp(-0.5 * boundary_position * boundary_position);
+    Eigen::VectorXd moments(2 * degree + 1);
+    moments(0) =
+      stats::pnorm(Eigen::VectorXd::Constant(1, boundary_position))(0);
+    moments(1) = -normal_density;
+    for (size_t order = 2; order < static_cast<size_t>(moments.size());
+         ++order) {
+      moments(order) = (order - 1.0) * moments(order - 2) -
+                       std::pow(boundary_position, order - 1) * normal_density;
+    }
+
+    Eigen::MatrixXd moment_matrix(degree + 1, degree + 1);
+    for (size_t column = 0; column <= degree; ++column) {
+      for (size_t matrix_row = 0; matrix_row <= degree; ++matrix_row)
+        moment_matrix(matrix_row, column) = moments(matrix_row + column);
+    }
+    const Eigen::VectorXd coefficients = moment_matrix.inverse().row(0);
+
+    double density = 0.0;
+    for (Eigen::Index observation = 0; observation < distances.size();
+         ++observation) {
+      const double kernel_argument =
+        (evaluation_distances(row) - distances(observation)) / bandwidth;
+      double polynomial = coefficients(degree);
+      for (size_t order = degree; order > 0; --order)
+        polynomial = polynomial * kernel_argument + coefficients(order - 1);
+      density +=
+        K0_ * std::exp(-0.5 * kernel_argument * kernel_argument) * polynomial;
+    }
+    component.density(row) =
+      density / (static_cast<double>(distances.size()) * bandwidth);
+    component.response(row) =
+      K0_ * coefficients(0) /
+      (static_cast<double>(distances.size()) * bandwidth);
+  }
+
+  for (Eigen::Index row = 0; row < component.density.size(); ++row) {
+    if (!(component.density(row) > 0.0) ||
+        !std::isfinite(component.density(row)) ||
+        !std::isfinite(component.response(row))) {
+      component.density(row) = 0.0;
+      component.response(row) = 0.0;
+    }
+  }
+  double mass = 0.0;
+  for (Eigen::Index row = 0; row < component.density.size() - 1; ++row) {
+    mass += (evaluation_distances(row + 1) - evaluation_distances(row)) *
+            (component.density(row) + component.density(row + 1)) / 2.0;
+  }
+  if (!(mass > 0.0) || !std::isfinite(mass))
+    return {};
+  component.density /= mass;
+  component.response /= mass;
+  return component;
+}
+
+//! Replaces the transformed bulk density near confidently finite endpoints
+//! and carries the same local mixture through the diagonal EDF response.
+inline void
+Kde1d::repair_boundaries(const Eigen::VectorXd& observations,
+                         const Eigen::VectorXd& grid_points,
+                         Eigen::VectorXd& influences)
+{
+  Eigen::VectorXd lower_distances;
+  Eigen::VectorXd upper_distances;
+  bool repair_lower = !std::isnan(xmin_);
+  bool repair_upper = !std::isnan(xmax_);
+  if (repair_lower) {
+    lower_distances = observations.array() - xmin_;
+    repair_lower = is_finite_endpoint(lower_distances);
+  }
+  if (repair_upper) {
+    upper_distances = xmax_ - observations.array();
+    repair_upper = is_finite_endpoint(upper_distances);
+  }
+  if (!repair_lower && !repair_upper)
+    return;
+
+  const double boundary_fraction =
+    std::min(0.25, 1.0 / std::sqrt(observations.size()));
+  auto endpoint_weight = [&](double probability) {
+    const double position = std::min(1.0, probability / boundary_fraction);
+    return 1.0 -
+           (3.0 * position * position - 2.0 * position * position * position);
+  };
+  auto targeting_weights = [&](const Eigen::VectorXd& distances) {
+    Eigen::VectorXd weights(distances.size());
+    const Eigen::VectorXi order = tools::get_order(distances);
+    Eigen::Index first = 0;
+    while (first < order.size()) {
+      Eigen::Index last = first;
+      while (last + 1 < order.size() &&
+             distances(order(last + 1)) == distances(order(first)))
+        ++last;
+      const double probability = static_cast<double>(first + last + 1) /
+                                 (2.0 * static_cast<double>(distances.size()));
+      for (Eigen::Index index = first; index <= last; ++index)
+        weights(order(index)) = endpoint_weight(probability);
+      first = last + 1;
+    }
+    return weights;
+  };
+
+  const double floor_fraction =
+    (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
+  auto fit_endpoint = [&](const Eigen::VectorXd& distances,
+                          const Eigen::VectorXd& evaluation_distances) {
+    const Eigen::VectorXd weights = targeting_weights(distances);
+    BoundaryComponent linear = fit_boundary_component(
+      distances, evaluation_distances, weights, floor_fraction, 1);
+    BoundaryComponent quadratic = fit_boundary_component(
+      distances, evaluation_distances, weights, floor_fraction, 2);
+    if (linear.density.size() == 0 || quadratic.density.size() == 0)
+      return BoundaryComponent{};
+    linear.density = (linear.density + quadratic.density) / 2.0;
+    linear.response = (linear.response + quadratic.response) / 2.0;
+    return linear;
+  };
+
+  BoundaryComponent lower;
+  BoundaryComponent upper;
+  if (repair_lower) {
+    lower = fit_endpoint(lower_distances, grid_points.array() - xmin_);
+    repair_lower = lower.density.size() > 0;
+  }
+  if (repair_upper) {
+    Eigen::VectorXd evaluation_distances =
+      (xmax_ - grid_points.array()).reverse();
+    upper = fit_endpoint(upper_distances, evaluation_distances);
+    repair_upper = upper.density.size() > 0;
+    if (repair_upper) {
+      upper.density.reverseInPlace();
+      upper.response.reverseInPlace();
+    }
+  }
+  if (!repair_lower && !repair_upper)
+    return;
+
+  const Eigen::VectorXd bulk_density = grid_.get_values();
+  const Eigen::VectorXd probabilities = grid_.integrate(grid_points, true);
+  Eigen::VectorXd lower_weights = Eigen::VectorXd::Zero(grid_points.size());
+  Eigen::VectorXd upper_weights = Eigen::VectorXd::Zero(grid_points.size());
+  for (Eigen::Index row = 0; row < grid_points.size(); ++row) {
+    if (repair_lower) {
+      lower_weights(row) = endpoint_weight(probabilities(row));
+    }
+    if (repair_upper) {
+      upper_weights(row) = endpoint_weight(1.0 - probabilities(row));
+    }
+  }
+
+  Eigen::VectorXd density(grid_points.size());
+  Eigen::VectorXd response(grid_points.size());
+  for (Eigen::Index row = 0; row < grid_points.size(); ++row) {
+    const double bulk_weight = 1.0 - lower_weights(row) - upper_weights(row);
+    density(row) = bulk_weight * bulk_density(row);
+    response(row) = bulk_weight * bulk_density(row) * influences(row);
+    if (repair_lower) {
+      density(row) += lower_weights(row) * lower.density(row);
+      response(row) += lower_weights(row) * lower.response(row);
+    }
+    if (repair_upper) {
+      density(row) += upper_weights(row) * upper.density(row);
+      response(row) += upper_weights(row) * upper.response(row);
+    }
+    influences(row) = density(row) > 0.0 ? response(row) / density(row) : 0.0;
+  }
+  grid_ = interp::InterpolationGrid(grid_points, density.cwiseMax(0.0), 3);
 }
 
 //  Bandwidth for Kernel Density Estimation

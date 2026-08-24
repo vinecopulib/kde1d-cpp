@@ -133,6 +133,54 @@ TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]
   CHECK(left_bounded.get_edf() == Approx(right_bounded.get_edf()));
 }
 
+TEST_CASE("one-sided finite endpoints use the boundary expert",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+  Kde1d fit(0.0, NAN, "continuous");
+  fit.fit(observations);
+
+  // A manual fit with the selected bulk bandwidth bypasses boundary repair.
+  Kde1d bulk(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 0.9905722, 0.9905911, 0.9885084, 0.9473293, 0.7314338,
+    0.0077356;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(4),
+    fit.get_values()(24), fit.get_values()(49), fit.get_values()(99),
+    fit.get_values()(199);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+  CHECK(std::isfinite(fit.get_edf()));
+
+  Kde1d reflected(NAN, 0.0, "continuous");
+  reflected.fit(-observations);
+  CHECK(fit.get_grid_points().isApprox(-reflected.get_grid_points().reverse(),
+                                       1e-12));
+  CHECK(fit.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(fit.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("one-sided vanishing endpoints retain the bulk fit",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = probabilities.array().sqrt();
+  Kde1d fit(0.0, NAN, "continuous");
+  fit.fit(observations);
+
+  Kde1d bulk(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK(fit.get_grid_points().isApprox(bulk.get_grid_points(), 1e-12));
+  CHECK(fit.get_values().isApprox(bulk.get_values(), 1e-12));
+  CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
+}
+
 TEST_CASE("finite support truncates density", "[finite-support]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.0, 1.0);

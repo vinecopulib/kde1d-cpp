@@ -13,9 +13,10 @@ path:
 The existing transformed estimator remains the bulk component in both cases.
 Unbounded continuous, discrete, and zero-inflated behavior remains unchanged.
 
-The first native version should activate only for unweighted fits with an
-automatically selected bandwidth and the default degree two. Weighted fits,
-explicit bandwidths, and nondefault degrees retain the current estimator until
+The first native version should activate only for samples of at least 16
+observations, unweighted or constant-weight fits, an automatically selected
+bandwidth, and the default degree two. Nonconstant weighted fits, explicit
+bandwidths, and nondefault degrees retain the current estimator until
 their expert semantics have been specified and validated. This is the first
 implementation milestone, not the intended final support boundary: experiments
 and subsequent activation for weighted and manual-bandwidth fits are important
@@ -27,9 +28,9 @@ Do not add a public method switch or another fitted-object representation.
 ## Minimal integration point
 
 Call the repair coordinator only when `type_ == VarType::continuous`, at least
-one support bound is finite, `weights` is empty, `bandwidth_spec_` is `NaN`,
-and `degree_ == 2`. This makes every initial fallback condition explicit at a
-single call site.
+one support bound is finite, at least 16 cleaned observations remain, case
+weights are absent or constant, `bandwidth_spec_` is `NaN`, and `degree_ == 2`.
+This makes every initial fallback condition explicit at a single call site.
 
 Keep the current body of `Kde1d::fit()` through construction of the normalized
 bulk `InterpolationGrid`. Preserve the cleaned observations on their original
