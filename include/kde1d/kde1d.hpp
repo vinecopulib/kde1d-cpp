@@ -1121,7 +1121,9 @@ Kde1d::select_boundary_bandwidth(const EndpointData& endpoint,
   const Eigen::Index n_bw = std::min<Eigen::Index>(
     dist.size(),
     std::max<Eigen::Index>(
-      4, static_cast<Eigen::Index>(std::ceil(fraction * dist.size()))));
+      4,
+      static_cast<Eigen::Index>(
+        std::ceil(fraction * static_cast<double>(dist.size())))));
   bandwidth::PluginBandwidthSelector selector(dist.head(n_bw),
                                               weights.head(n_bw));
   return selector.select_bandwidth(2) * multiplier_;
@@ -1259,7 +1261,8 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
   for (Eigen::Index j = 0; j < eval_dist.size(); ++j) {
     const double a = eval_dist(j) / h;
     const BoundaryKernelCoefficients c = boundary_kernel_coefficients(a);
-    const double position = eval_dist(j) * num_bins / convolutions.upper;
+    const double position =
+      eval_dist(j) * static_cast<double>(num_bins) / convolutions.upper;
     const size_t bin = std::min(static_cast<size_t>(position), num_bins - 1);
     const double fraction = position - static_cast<double>(bin);
     auto interpolate = [&](const Eigen::VectorXd& values) {
