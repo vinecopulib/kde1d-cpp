@@ -29,12 +29,31 @@ integrate_values <- function(points, values) {
   sum(diff(points) * (values[-length(values)] + values[-1L]) / 2)
 }
 
-fit_kde1d <- function(observations, xmin = NA_real_, xmax = NA_real_) {
-  arguments <- list(x = observations, xmin = xmin, xmax = xmax)
+fit_kde1d <- function(observations, degree,
+                      xmin = NA_real_, xmax = NA_real_) {
+  arguments <- list(x = observations, xmin = xmin, xmax = xmax, deg = degree)
   if (method != "pre-pr") {
     arguments$boundary_repair <- method == "expert"
   }
   do.call(kde1d, arguments)
+}
+
+classify_finite_endpoint <- function(distances) {
+  distances <- sort(distances)
+  k <- min(length(distances) - 1L, ceiling(2 * sqrt(length(distances))))
+  reference_distance <- distances[[k + 1L]]
+  if (!is.finite(reference_distance) || reference_distance <= 0) {
+    return(FALSE)
+  }
+  denominator <- sum(log(
+    reference_distance /
+      pmax(distances[seq_len(k)], .Machine$double.eps * reference_distance)
+  ))
+  if (!is.finite(denominator) || denominator <= 0) {
+    return(FALSE)
+  }
+  beta <- k / denominator
+  beta >= 0.9 && beta * (1 - qnorm(0.95) / sqrt(k)) <= 1
 }
 
 one_sided <- list(
@@ -74,6 +93,7 @@ two_sided <- list(
   beta_2_2 = c(2, 2)
 )
 sample_sizes <- c(25L, 100L, 1000L, 2000L)
+degrees <- 0:2
 one_sided_scales <- c(1e-4, 1, 1e4)
 one_sided_directions <- c("lower", "upper")
 result_rows <- list()
@@ -121,47 +141,55 @@ for (scenario_index in seq_along(one_sided)) {
         truth <- rev(scaled_truth)
         boundary <- points >= -scale * scenario$quantile(0.1)
       }
-      for (sample_size in sample_sizes) {
-        estimates <- matrix(NA_real_, length(points), replications)
-        for (replication in seq_len(replications)) {
-          set.seed(20260824L + 10000000L * scenario_index +
-                     1000000L * scale_index + 100000L * direction_index +
-                     1000L * match(sample_size, sample_sizes) + replication)
-          observations <- scale * scenario$random(sample_size)
-          if (direction == "lower") {
-            fit <- fit_kde1d(observations, xmin = 0)
-          } else {
-            fit <- fit_kde1d(-observations, xmax = 0)
+      for (degree in degrees) {
+        for (sample_size in sample_sizes) {
+          estimates <- matrix(NA_real_, length(points), replications)
+          for (replication in seq_len(replications)) {
+            # Reuse the base sample across scales and reflections so departures
+            # from scale/reflection equivariance are paired directly.
+            set.seed(20260824L + 10000000L * scenario_index +
+                       1000L * match(sample_size, sample_sizes) + replication)
+            observations <- scale * scenario$random(sample_size)
+            repair_endpoint <- classify_finite_endpoint(observations)
+            if (direction == "lower") {
+              fit <- fit_kde1d(observations, degree, xmin = 0)
+            } else {
+              fit <- fit_kde1d(-observations, degree, xmax = 0)
+            }
+            estimates[, replication] <- dkde1d(points, fit)
+            result_rows[[length(result_rows) + 1L]] <- data.frame(
+              support = "one-sided",
+              direction = direction,
+              scale = scale,
+              scenario = names(one_sided)[[scenario_index]],
+              degree = degree,
+              sample_size = sample_size,
+              replication = replication,
+              method = method,
+              repair_lower = direction == "lower" && repair_endpoint,
+              repair_upper = direction == "upper" && repair_endpoint,
+              global_ise = integrate_values(
+                points, (estimates[, replication] - truth)^2
+              ),
+              boundary_ise = integrate_values(
+                points[boundary],
+                (estimates[boundary, replication] - truth[boundary])^2
+              ),
+              edf = fit$edf,
+              loglik = fit$loglik
+            )
           }
-          estimates[, replication] <- dkde1d(points, fit)
-          result_rows[[length(result_rows) + 1L]] <- data.frame(
+          summary_rows[[length(summary_rows) + 1L]] <- data.frame(
             support = "one-sided",
             direction = direction,
             scale = scale,
             scenario = names(one_sided)[[scenario_index]],
+            degree = degree,
             sample_size = sample_size,
-            replication = replication,
             method = method,
-            global_ise = integrate_values(
-              points, (estimates[, replication] - truth)^2
-            ),
-            boundary_ise = integrate_values(
-              points[boundary],
-              (estimates[boundary, replication] - truth[boundary])^2
-            ),
-            edf = fit$edf,
-            loglik = fit$loglik
+            as.list(summarize_estimates(points, estimates, truth, boundary))
           )
         }
-        summary_rows[[length(summary_rows) + 1L]] <- data.frame(
-          support = "one-sided",
-          direction = direction,
-          scale = scale,
-          scenario = names(one_sided)[[scenario_index]],
-          sample_size = sample_size,
-          method = method,
-          as.list(summarize_estimates(points, estimates, truth, boundary))
-        )
       }
     }
   }
@@ -176,45 +204,53 @@ boundary <- points <= 0.1 | points >= 0.9
 for (scenario_index in seq_along(two_sided)) {
   shapes <- two_sided[[scenario_index]]
   truth <- dbeta(points, shapes[[1L]], shapes[[2L]])
-  for (sample_size in sample_sizes) {
-    estimates <- matrix(NA_real_, length(points), replications)
-    for (replication in seq_len(replications)) {
-      set.seed(20260825L + 100000L * scenario_index +
-                 1000L * match(sample_size, sample_sizes) + replication)
-      fit <- fit_kde1d(
-        rbeta(sample_size, shapes[[1L]], shapes[[2L]]),
-        xmin = 0,
-        xmax = 1
-      )
-      estimates[, replication] <- dkde1d(points, fit)
-      result_rows[[length(result_rows) + 1L]] <- data.frame(
+  for (degree in degrees) {
+    for (sample_size in sample_sizes) {
+      estimates <- matrix(NA_real_, length(points), replications)
+      for (replication in seq_len(replications)) {
+        set.seed(20260825L + 100000L * scenario_index +
+                   1000L * match(sample_size, sample_sizes) + replication)
+        observations <- rbeta(sample_size, shapes[[1L]], shapes[[2L]])
+        fit <- fit_kde1d(
+          observations,
+          degree,
+          xmin = 0,
+          xmax = 1
+        )
+        estimates[, replication] <- dkde1d(points, fit)
+        result_rows[[length(result_rows) + 1L]] <- data.frame(
+          support = "two-sided",
+          direction = NA_character_,
+          scale = 1,
+          scenario = names(two_sided)[[scenario_index]],
+          degree = degree,
+          sample_size = sample_size,
+          replication = replication,
+          method = method,
+          repair_lower = classify_finite_endpoint(observations),
+          repair_upper = classify_finite_endpoint(1 - observations),
+          global_ise = integrate_values(
+            points, (estimates[, replication] - truth)^2
+          ),
+          boundary_ise = integrate_values(
+            points[boundary],
+            (estimates[boundary, replication] - truth[boundary])^2
+          ),
+          edf = fit$edf,
+          loglik = fit$loglik
+        )
+      }
+      summary_rows[[length(summary_rows) + 1L]] <- data.frame(
         support = "two-sided",
         direction = NA_character_,
         scale = 1,
         scenario = names(two_sided)[[scenario_index]],
+        degree = degree,
         sample_size = sample_size,
-        replication = replication,
         method = method,
-        global_ise = integrate_values(
-          points, (estimates[, replication] - truth)^2
-        ),
-        boundary_ise = integrate_values(
-          points[boundary],
-          (estimates[boundary, replication] - truth[boundary])^2
-        ),
-        edf = fit$edf,
-        loglik = fit$loglik
+        as.list(summarize_estimates(points, estimates, truth, boundary))
       )
     }
-    summary_rows[[length(summary_rows) + 1L]] <- data.frame(
-      support = "two-sided",
-      direction = NA_character_,
-      scale = 1,
-      scenario = names(two_sided)[[scenario_index]],
-      sample_size = sample_size,
-      method = method,
-      as.list(summarize_estimates(points, estimates, truth, boundary))
-    )
   }
 }
 
