@@ -124,7 +124,7 @@ private:
   struct BoundaryComponent
   {
     Eigen::VectorXd density;
-    Eigen::VectorXd response;
+    Eigen::VectorXd influence_num;
   };
 
   // data members
@@ -191,15 +191,14 @@ private:
                           double multiplier,
                           size_t degree,
                           const Eigen::VectorXd& weights) const;
-  bool is_finite_endpoint(Eigen::VectorXd distances) const;
-  BoundaryComponent fit_boundary_component(
-    const Eigen::VectorXd& distances,
-    const Eigen::VectorXd& evaluation_distances,
-    const Eigen::VectorXd& bandwidth_weights,
-    double floor_fraction,
-    size_t degree) const;
-  void repair_boundaries(const Eigen::VectorXd& observations,
-                         const Eigen::VectorXd& grid_points,
+  bool is_finite_endpoint(Eigen::VectorXd dist) const;
+  BoundaryComponent fit_boundary_component(const Eigen::VectorXd& dist,
+                                           const Eigen::VectorXd& eval_dist,
+                                           const Eigen::VectorXd& bw_weights,
+                                           double floor_fraction,
+                                           size_t degree) const;
+  void repair_boundaries(const Eigen::VectorXd& x,
+                         const Eigen::VectorXd& grid,
                          Eigen::VectorXd& influences);
 
   std::string as_str(VarType type) const;
@@ -948,235 +947,283 @@ Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
   return grid_points;
 }
 
-//! Classifies a support endpoint from the power law of its closest order
-//! statistics. Ambiguous and numerically degenerate cases retain the bulk fit.
+//! Classifies a support endpoint from its ordered distances @f$d@f$ to the
+//! endpoint. For @f$k = \min(n-1, \lceil 2\sqrt n \rceil)@f$, the lower-tail
+//! index is
+//! @f[
+//! \widehat\beta = \frac{k}{\sum_{i=1}^k
+//!   \log\{d_{(k+1)} / d_{(i)}\}}.
+//! @f]
+//! It is treated as finite when @f$\widehat\beta \geq 0.9@f$ and its
+//! one-sided 95% lower confidence bound does not exceed one. Ambiguous and
+//! numerically degenerate cases retain the bulk fit.
+//! @param dist distances of the observations from the support endpoint; copied
+//!   because the classifier sorts them.
+//! @return whether the endpoint is confidently classified as finite.
 inline bool
-Kde1d::is_finite_endpoint(Eigen::VectorXd distances) const
+Kde1d::is_finite_endpoint(Eigen::VectorXd dist) const
 {
-  std::sort(distances.data(), distances.data() + distances.size());
-  const size_t tail_count =
-    std::min(static_cast<size_t>(distances.size() - 1),
-             static_cast<size_t>(std::ceil(2.0 * std::sqrt(distances.size()))));
-  const double threshold = distances(tail_count);
-  if (!(threshold > 0.0) || !std::isfinite(threshold))
+  std::sort(dist.data(), dist.data() + dist.size());
+
+  // k is the number of lower order statistics; dist_k1 is d_(k+1).
+  const size_t k =
+    std::min(static_cast<size_t>(dist.size() - 1),
+             static_cast<size_t>(std::ceil(2.0 * std::sqrt(dist.size()))));
+  const double dist_k1 = dist(k);
+  if (!(dist_k1 > 0.0) || !std::isfinite(dist_k1))
     return false;
 
-  double log_sum = 0.0;
-  const double distance_floor =
-    std::numeric_limits<double>::epsilon() * threshold;
-  for (size_t index = 0; index < tail_count; ++index) {
-    log_sum += std::log(threshold / std::max(distances(index), distance_floor));
+  // denom is the denominator of the lower-tail index beta = k / denom.
+  double denom = 0.0;
+  const double dist_min = std::numeric_limits<double>::epsilon() * dist_k1;
+  for (size_t i = 0; i < k; ++i) {
+    denom += std::log(dist_k1 / std::max(dist(i), dist_min));
   }
-  if (!(log_sum > 0.0) || !std::isfinite(log_sum))
+  if (!(denom > 0.0) || !std::isfinite(denom))
     return false;
 
-  const double tail_index = static_cast<double>(tail_count) / log_sum;
+  const double beta = static_cast<double>(k) / denom;
   // 1.64485 is the 95% standard-normal quantile used by the R selector.
-  return tail_index >= 0.9 &&
-         tail_index * (1.0 - 1.6448536269514722 / std::sqrt(tail_count)) <= 1.0;
+  return beta >= 0.9 && beta * (1.0 - 1.6448536269514722 / std::sqrt(k)) <= 1.0;
 }
 
-//! Fits one Gaussian local-polynomial endpoint component. Targeting weights
-//! select its bandwidth only; equal observation contributions preserve the
-//! original density estimand.
+//! Fits a degree-@f$p@f$ Gaussian local-polynomial component from sample
+//! distances @f$d@f$ to endpoint-distance grid @f$t@f$. With bandwidth
+//! @f$h@f$, truncated Gaussian moments @f$\mu_r(a)@f$, and
+//! @f$M_p(a) = [\mu_{j+k}(a)]_{j,k=0}^p@f$, the equivalent-kernel estimate is
+//! @f[
+//! \begin{align*}
+//! a &= t/h, & u_i &= (t-d_i)/h, \\[2pt]
+//! \widehat f_p(t)
+//!   &= \frac{1}{nh}\sum_{i=1}^n \phi(u_i)\,
+//!      e_0^\mathsf{T} M_p(a)^{-1}(1,u_i,\ldots,u_i^p)^\mathsf{T}, \\[2pt]
+//! \nu_p(t) &= \frac{\phi(0)}{nh}
+//!   e_0^\mathsf{T}M_p(a)^{-1}e_0.
+//! \end{align*}
+//! @f]
+//! Targeting weights select @f$h@f$ only, so observations contribute equally
+//! and the density estimand is unchanged. The influence numerator
+//! @f$\nu_p(t)@f$ is the diagonal kernel contribution; dividing it by
+//! @f$\widehat f_p(t)@f$ gives the pointwise influence used for EDF.
+//! @param dist distances of the observations from the support endpoint.
+//! @param eval_dist endpoint distances at which to evaluate the component.
+//! @param bw_weights targeting weights used only for bandwidth selection.
+//! @param floor_fraction fraction of the closest observations used to select
+//!   the bandwidth floor.
+//! @param degree local-polynomial degree.
+//! @return the normalized density and influence numerator on `eval_dist`; an
+//!   empty component indicates numerical failure.
 inline Kde1d::BoundaryComponent
-Kde1d::fit_boundary_component(const Eigen::VectorXd& distances,
-                              const Eigen::VectorXd& evaluation_distances,
-                              const Eigen::VectorXd& bandwidth_weights,
+Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
+                              const Eigen::VectorXd& eval_dist,
+                              const Eigen::VectorXd& bw_weights,
                               double floor_fraction,
                               size_t degree) const
 {
-  bandwidth::PluginBandwidthSelector selector(distances, bandwidth_weights);
-  double bandwidth = selector.select_bandwidth(degree);
+  bandwidth::PluginBandwidthSelector selector(dist, bw_weights);
+  double h = selector.select_bandwidth(degree);
 
-  Eigen::VectorXd ordered_distances = distances;
-  std::sort(ordered_distances.data(),
-            ordered_distances.data() + ordered_distances.size());
-  const Eigen::Index floor_count = std::min<Eigen::Index>(
-    distances.size(),
+  // Floor h with a selector on the closest observations to stabilize the fit.
+  Eigen::VectorXd dist_sorted = dist;
+  std::sort(dist_sorted.data(), dist_sorted.data() + dist_sorted.size());
+  const Eigen::Index n_floor = std::min<Eigen::Index>(
+    dist.size(),
     std::max<Eigen::Index>(
-      4,
-      static_cast<Eigen::Index>(std::ceil(floor_fraction * distances.size()))));
-  bandwidth::PluginBandwidthSelector floor_selector(
-    ordered_distances.head(floor_count));
-  bandwidth =
-    std::max(bandwidth, floor_selector.select_bandwidth(degree)) * multiplier_;
-  if (!(bandwidth > 0.0) || !std::isfinite(bandwidth))
+      4, static_cast<Eigen::Index>(std::ceil(floor_fraction * dist.size()))));
+  bandwidth::PluginBandwidthSelector floor_selector(dist_sorted.head(n_floor));
+  h = std::max(h, floor_selector.select_bandwidth(degree)) * multiplier_;
+  if (!(h > 0.0) || !std::isfinite(h))
     return {};
 
-  BoundaryComponent component{ Eigen::VectorXd(evaluation_distances.size()),
-                               Eigen::VectorXd(evaluation_distances.size()) };
-  for (Eigen::Index row = 0; row < evaluation_distances.size(); ++row) {
-    const double boundary_position = evaluation_distances(row) / bandwidth;
-    const double normal_density =
-      K0_ * std::exp(-0.5 * boundary_position * boundary_position);
-    Eigen::VectorXd moments(2 * degree + 1);
-    moments(0) =
-      stats::pnorm(Eigen::VectorXd::Constant(1, boundary_position))(0);
-    moments(1) = -normal_density;
-    for (size_t order = 2; order < static_cast<size_t>(moments.size());
-         ++order) {
-      moments(order) = (order - 1.0) * moments(order - 2) -
-                       std::pow(boundary_position, order - 1) * normal_density;
+  BoundaryComponent fit{ Eigen::VectorXd(eval_dist.size()),
+                         Eigen::VectorXd(eval_dist.size()) };
+  for (Eigen::Index j = 0; j < eval_dist.size(); ++j) {
+    // a = t/h truncates the kernel; mu stores its moments up to order 2p.
+    const double a = eval_dist(j) / h;
+    const double phi_a = K0_ * std::exp(-0.5 * a * a);
+    Eigen::VectorXd mu(2 * degree + 1);
+    mu(0) = stats::pnorm(Eigen::VectorXd::Constant(1, a))(0);
+    mu(1) = -phi_a;
+    for (size_t order = 2; order < static_cast<size_t>(mu.size()); ++order) {
+      mu(order) =
+        (order - 1.0) * mu(order - 2) - std::pow(a, order - 1) * phi_a;
     }
 
-    Eigen::MatrixXd moment_matrix(degree + 1, degree + 1);
+    // M is the moment matrix; c, its first inverse row, gives the kernel.
+    Eigen::MatrixXd M(degree + 1, degree + 1);
     for (size_t column = 0; column <= degree; ++column) {
-      for (size_t matrix_row = 0; matrix_row <= degree; ++matrix_row)
-        moment_matrix(matrix_row, column) = moments(matrix_row + column);
+      for (size_t row = 0; row <= degree; ++row)
+        M(row, column) = mu(row + column);
     }
-    const Eigen::VectorXd coefficients = moment_matrix.inverse().row(0);
+    const Eigen::VectorXd c = M.inverse().row(0);
 
-    double density = 0.0;
-    for (Eigen::Index observation = 0; observation < distances.size();
-         ++observation) {
-      const double kernel_argument =
-        (evaluation_distances(row) - distances(observation)) / bandwidth;
-      double polynomial = coefficients(degree);
+    double f = 0.0;
+    for (Eigen::Index i = 0; i < dist.size(); ++i) {
+      const double u = (eval_dist(j) - dist(i)) / h;
+      double p_u = c(degree);
       for (size_t order = degree; order > 0; --order)
-        polynomial = polynomial * kernel_argument + coefficients(order - 1);
-      density +=
-        K0_ * std::exp(-0.5 * kernel_argument * kernel_argument) * polynomial;
+        p_u = p_u * u + c(order - 1);
+      f += K0_ * std::exp(-0.5 * u * u) * p_u;
     }
-    component.density(row) =
-      density / (static_cast<double>(distances.size()) * bandwidth);
-    component.response(row) =
-      K0_ * coefficients(0) /
-      (static_cast<double>(distances.size()) * bandwidth);
+    fit.density(j) = f / (static_cast<double>(dist.size()) * h);
+    fit.influence_num(j) = K0_ * c(0) / (static_cast<double>(dist.size()) * h);
   }
 
-  for (Eigen::Index row = 0; row < component.density.size(); ++row) {
-    if (!(component.density(row) > 0.0) ||
-        !std::isfinite(component.density(row)) ||
-        !std::isfinite(component.response(row))) {
-      component.density(row) = 0.0;
-      component.response(row) = 0.0;
+  // Remove unstable local-polynomial values, then normalize on the grid.
+  for (Eigen::Index j = 0; j < fit.density.size(); ++j) {
+    if (!(fit.density(j) > 0.0) || !std::isfinite(fit.density(j)) ||
+        !std::isfinite(fit.influence_num(j))) {
+      fit.density(j) = 0.0;
+      fit.influence_num(j) = 0.0;
     }
   }
   double mass = 0.0;
-  for (Eigen::Index row = 0; row < component.density.size() - 1; ++row) {
-    mass += (evaluation_distances(row + 1) - evaluation_distances(row)) *
-            (component.density(row) + component.density(row + 1)) / 2.0;
+  for (Eigen::Index j = 0; j < fit.density.size() - 1; ++j) {
+    mass += (eval_dist(j + 1) - eval_dist(j)) *
+            (fit.density(j) + fit.density(j + 1)) / 2.0;
   }
   if (!(mass > 0.0) || !std::isfinite(mass))
     return {};
-  component.density /= mass;
-  component.response /= mass;
-  return component;
+  fit.density /= mass;
+  fit.influence_num /= mass;
+  return fit;
 }
 
-//! Replaces the transformed bulk density near confidently finite endpoints
-//! and carries the same local mixture through the diagonal EDF response.
+//! Fuses the transformed bulk density @f$\widehat f_B@f$ with endpoint
+//! densities @f$\widehat f_L@f$ and @f$\widehat f_U@f$. Each endpoint density
+//! is the average of a local-linear and a local-quadratic estimate. Smooth
+//! weights @f$w_L@f$ and @f$w_U@f$ are functions of the bulk CDF and shrink at
+//! rate @f$\min(1/4,n^{-1/2})@f$:
+//! @f[
+//! \begin{align*}
+//! q &= \min(1/4,n^{-1/2}), & z(p) &= \min(1,p/q), \\[2pt]
+//! g(p) &= 1-3z(p)^2+2z(p)^3, \\[2pt]
+//! w_L &= g(F_B), & w_U &= g(1-F_B), \\[2pt]
+//! \widehat f
+//!   &= w_L\widehat f_L+(1-w_L-w_U)\widehat f_B+w_U\widehat f_U, \\[2pt]
+//! \nu &= w_L\nu_L+(1-w_L-w_U)\nu_B+w_U\nu_U, \\[2pt]
+//! \mathrm{influence} &= \nu/\widehat f.
+//! \end{align*}
+//! @f]
+//! Here @f$\nu@f$ is the influence numerator, i.e., the diagonal kernel
+//! contribution on the density scale. Only endpoints classified as finite are
+//! repaired.
+//! @param x observations on the original scale.
+//! @param grid increasing evaluation grid on the original scale.
+//! @param influences on input, bulk-fit influences on `grid`; on output,
+//!   influences of the fused estimate.
 inline void
-Kde1d::repair_boundaries(const Eigen::VectorXd& observations,
-                         const Eigen::VectorXd& grid_points,
+Kde1d::repair_boundaries(const Eigen::VectorXd& x,
+                         const Eigen::VectorXd& grid,
                          Eigen::VectorXd& influences)
 {
-  Eigen::VectorXd lower_distances;
-  Eigen::VectorXd upper_distances;
+  Eigen::VectorXd dist_lower;
+  Eigen::VectorXd dist_upper;
   bool repair_lower = !std::isnan(xmin_);
   bool repair_upper = !std::isnan(xmax_);
   if (repair_lower) {
-    lower_distances = observations.array() - xmin_;
-    repair_lower = is_finite_endpoint(lower_distances);
+    dist_lower = x.array() - xmin_;
+    repair_lower = is_finite_endpoint(dist_lower);
   }
   if (repair_upper) {
-    upper_distances = xmax_ - observations.array();
-    repair_upper = is_finite_endpoint(upper_distances);
+    dist_upper = xmax_ - x.array();
+    repair_upper = is_finite_endpoint(dist_upper);
   }
   if (!repair_lower && !repair_upper)
     return;
 
-  const double boundary_fraction =
-    std::min(0.25, 1.0 / std::sqrt(observations.size()));
+  // q is the shrinking probability width of each endpoint weight.
+  const double q = std::min(0.25, 1.0 / std::sqrt(x.size()));
   auto endpoint_weight = [&](double probability) {
-    const double position = std::min(1.0, probability / boundary_fraction);
-    return 1.0 -
-           (3.0 * position * position - 2.0 * position * position * position);
+    const double z = std::min(1.0, probability / q);
+    return 1.0 - (3.0 * z * z - 2.0 * z * z * z);
   };
-  auto targeting_weights = [&](const Eigen::VectorXd& distances) {
-    Eigen::VectorXd weights(distances.size());
-    const Eigen::VectorXi order = tools::get_order(distances);
+  // Mid-rank weights target endpoint observations during bandwidth selection.
+  auto targeting_weights = [&](const Eigen::VectorXd& dist) {
+    Eigen::VectorXd weights(dist.size());
+    const Eigen::VectorXi order = tools::get_order(dist);
     Eigen::Index first = 0;
     while (first < order.size()) {
       Eigen::Index last = first;
       while (last + 1 < order.size() &&
-             distances(order(last + 1)) == distances(order(first)))
+             dist(order(last + 1)) == dist(order(first)))
         ++last;
       const double probability = static_cast<double>(first + last + 1) /
-                                 (2.0 * static_cast<double>(distances.size()));
-      for (Eigen::Index index = first; index <= last; ++index)
-        weights(order(index)) = endpoint_weight(probability);
+                                 (2.0 * static_cast<double>(dist.size()));
+      for (Eigen::Index i = first; i <= last; ++i)
+        weights(order(i)) = endpoint_weight(probability);
       first = last + 1;
     }
     return weights;
   };
 
+  // The bandwidth floor uses all data on bounded support and 75% otherwise.
   const double floor_fraction =
     (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
-  auto fit_endpoint = [&](const Eigen::VectorXd& distances,
-                          const Eigen::VectorXd& evaluation_distances) {
-    const Eigen::VectorXd weights = targeting_weights(distances);
-    BoundaryComponent linear = fit_boundary_component(
-      distances, evaluation_distances, weights, floor_fraction, 1);
-    BoundaryComponent quadratic = fit_boundary_component(
-      distances, evaluation_distances, weights, floor_fraction, 2);
+  auto fit_endpoint = [&](const Eigen::VectorXd& dist,
+                          const Eigen::VectorXd& eval_dist) {
+    const Eigen::VectorXd bw_weights = targeting_weights(dist);
+    // Averaging orders one and two gives a smoother, more stable endpoint.
+    BoundaryComponent linear =
+      fit_boundary_component(dist, eval_dist, bw_weights, floor_fraction, 1);
+    BoundaryComponent quadratic =
+      fit_boundary_component(dist, eval_dist, bw_weights, floor_fraction, 2);
     if (linear.density.size() == 0 || quadratic.density.size() == 0)
       return BoundaryComponent{};
     linear.density = (linear.density + quadratic.density) / 2.0;
-    linear.response = (linear.response + quadratic.response) / 2.0;
+    linear.influence_num =
+      (linear.influence_num + quadratic.influence_num) / 2.0;
     return linear;
   };
 
   BoundaryComponent lower;
   BoundaryComponent upper;
   if (repair_lower) {
-    lower = fit_endpoint(lower_distances, grid_points.array() - xmin_);
+    lower = fit_endpoint(dist_lower, grid.array() - xmin_);
     repair_lower = lower.density.size() > 0;
   }
   if (repair_upper) {
-    Eigen::VectorXd evaluation_distances =
-      (xmax_ - grid_points.array()).reverse();
-    upper = fit_endpoint(upper_distances, evaluation_distances);
+    Eigen::VectorXd upper_eval_dist = (xmax_ - grid.array()).reverse();
+    upper = fit_endpoint(dist_upper, upper_eval_dist);
     repair_upper = upper.density.size() > 0;
     if (repair_upper) {
       upper.density.reverseInPlace();
-      upper.response.reverseInPlace();
+      upper.influence_num.reverseInPlace();
     }
   }
   if (!repair_lower && !repair_upper)
     return;
 
-  const Eigen::VectorXd bulk_density = grid_.get_values();
-  const Eigen::VectorXd probabilities = grid_.integrate(grid_points, true);
-  Eigen::VectorXd lower_weights = Eigen::VectorXd::Zero(grid_points.size());
-  Eigen::VectorXd upper_weights = Eigen::VectorXd::Zero(grid_points.size());
-  for (Eigen::Index row = 0; row < grid_points.size(); ++row) {
-    if (repair_lower) {
-      lower_weights(row) = endpoint_weight(probabilities(row));
-    }
-    if (repair_upper) {
-      upper_weights(row) = endpoint_weight(1.0 - probabilities(row));
-    }
+  // f_bulk and bulk_cdf determine the fused density and endpoint weights.
+  const Eigen::VectorXd f_bulk = grid_.get_values();
+  const Eigen::VectorXd bulk_cdf = grid_.integrate(grid, true);
+  Eigen::VectorXd w_l = Eigen::VectorXd::Zero(grid.size());
+  Eigen::VectorXd w_u = Eigen::VectorXd::Zero(grid.size());
+  for (Eigen::Index j = 0; j < grid.size(); ++j) {
+    if (repair_lower)
+      w_l(j) = endpoint_weight(bulk_cdf(j));
+    if (repair_upper)
+      w_u(j) = endpoint_weight(1.0 - bulk_cdf(j));
   }
 
-  Eigen::VectorXd density(grid_points.size());
-  Eigen::VectorXd response(grid_points.size());
-  for (Eigen::Index row = 0; row < grid_points.size(); ++row) {
-    const double bulk_weight = 1.0 - lower_weights(row) - upper_weights(row);
-    density(row) = bulk_weight * bulk_density(row);
-    response(row) = bulk_weight * bulk_density(row) * influences(row);
+  // Fuse densities and influence numerators with the same weights.
+  Eigen::VectorXd f(grid.size());
+  Eigen::VectorXd infl_num(grid.size());
+  for (Eigen::Index j = 0; j < grid.size(); ++j) {
+    const double w_b = 1.0 - w_l(j) - w_u(j);
+    f(j) = w_b * f_bulk(j);
+    infl_num(j) = w_b * f_bulk(j) * influences(j);
     if (repair_lower) {
-      density(row) += lower_weights(row) * lower.density(row);
-      response(row) += lower_weights(row) * lower.response(row);
+      f(j) += w_l(j) * lower.density(j);
+      infl_num(j) += w_l(j) * lower.influence_num(j);
     }
     if (repair_upper) {
-      density(row) += upper_weights(row) * upper.density(row);
-      response(row) += upper_weights(row) * upper.response(row);
+      f(j) += w_u(j) * upper.density(j);
+      infl_num(j) += w_u(j) * upper.influence_num(j);
     }
-    influences(row) = density(row) > 0.0 ? response(row) / density(row) : 0.0;
+    influences(j) = f(j) > 0.0 ? infl_num(j) / f(j) : 0.0;
   }
-  grid_ = interp::InterpolationGrid(grid_points, density.cwiseMax(0.0), 3);
+  grid_ = interp::InterpolationGrid(grid, f.cwiseMax(0.0), 3);
 }
 
 //  Bandwidth for Kernel Density Estimation
