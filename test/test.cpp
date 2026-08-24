@@ -148,8 +148,8 @@ TEST_CASE("one-sided finite endpoints use the boundary expert",
   CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
 
   Eigen::VectorXd expected_density(6);
-  expected_density << 0.9905722, 0.9905911, 0.9885084, 0.9473293, 0.7314338,
-    0.0077356;
+  expected_density << 0.9884817, 0.9885018, 0.9865198, 0.9465577, 0.7315411,
+    0.0077367;
   Eigen::VectorXd selected_density(6);
   selected_density << fit.get_values()(0), fit.get_values()(4),
     fit.get_values()(24), fit.get_values()(49), fit.get_values()(99),
@@ -194,8 +194,8 @@ TEST_CASE("two-sided finite endpoints use the boundary experts",
   CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
 
   Eigen::VectorXd expected_density(6);
-  expected_density << 1.0368661, 1.0367788, 1.0250191, 0.9972352, 1.0231640,
-    1.0368661;
+  expected_density << 0.9993158, 0.9992803, 0.9985546, 1.0001208, 0.9985473,
+    0.9993158;
   Eigen::VectorXd selected_density(6);
   selected_density << fit.get_values()(0), fit.get_values()(49),
     fit.get_values()(99), fit.get_values()(199), fit.get_values()(299),
@@ -223,7 +223,7 @@ TEST_CASE("two-sided endpoints are classified independently",
   fit.fit(observations);
 
   Eigen::VectorXd expected_density(6);
-  expected_density << 1.9952890, 1.9913280, 1.9839701, 0.9946680, 0.0562144,
+  expected_density << 1.9984196, 1.9944352, 1.9846050, 0.9946111, 0.0562112,
     0.0000020;
   Eigen::VectorXd selected_density(6);
   selected_density << fit.get_values()(0), fit.get_values()(49),

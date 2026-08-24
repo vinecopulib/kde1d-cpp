@@ -41,7 +41,7 @@ the bulk grid:
 2. return to the unchanged bulk path if no endpoint is confidently finite;
 3. fit a boundary component only for each selected endpoint, using the existing
    original-scale grid;
-4. form gate probabilities from the normalized bulk CDF;
+4. form endpoint weights from the normalized bulk CDF;
 5. fuse bulk and selected endpoint values and replace `grid_` with the
    normalized fused grid.
 
@@ -50,7 +50,7 @@ log-likelihood code then operates on the fused grid. `bandwidth_` continues to
 report the bulk bandwidth.
 
 Boundary distances and local densities can stay in the original units. Every
-classifier ratio is dimensionless, and both selected and floor bandwidths
+classifier ratio is dimensionless, and the boundary bandwidths
 scale with the data, so this is equivalent to the R reference's affine map to
 $[0,1]$ without adding a second normalization path.
 
@@ -95,14 +95,12 @@ The helper takes boundary distances, ascending evaluation distances, rank
 weights, a floor fraction, and degree one or two.
 
 - Select the weighted bandwidth with `PluginBandwidthSelector`.
-- Select the unweighted floor bandwidth from the closest
+- Select one unweighted degree-2 bandwidth from the closest
   $\max(4,\lceil q n\rceil)$ distances, where $q=0.75$ for one-sided support
   and $q=1$ for two-sided support.
-- Use the maximum of the selected and floor bandwidths, then apply the public
-  multiplier.
-- Use rank weights only for bandwidth selection. Evaluate density
-  contributions with equal observation weights so the estimand remains the
-  original density.
+- Share it between the degree-one and degree-two kernels, then apply the public
+  multiplier. Evaluate density contributions with equal observation weights
+  so the estimand remains the original density.
 
 Construct the equivalent-kernel coefficients as the first row of the inverse
 truncated-normal moment matrix. Generate the moments with
@@ -113,24 +111,20 @@ $$
 \mu_j(a)=(j-1)\mu_{j-2}(a)-a^{j-1}\phi(a).
 $$
 
-This calculation covers degrees one and two more concisely than separate
-determinant formulas. Clamp each component at zero, normalize it on the
-distance grid, and average the degree-one and degree-two components. Return
-both that density and its diagonal density response for the EDF calculation
-described below; the response uses the same clamp mask and normalization as
-the density.
+Use the explicit degree-one and degree-two determinants to avoid a dynamic
+matrix inverse at every evaluation point. Average the two kernels before
+fusion, clamp negative values, and return both the density and its influence
+numerator for the EDF calculation described below.
 
-Start with direct $O(nm)$ Gaussian evaluation on the existing grid of
-$m\approx401$ points. It follows the retained R references closely and avoids
-a second interpolation grid or FFT-specific derivation. Benchmark before
-considering an optimized implementation.
+Evaluate directly only where the endpoint weight is nonzero. With ordered
+distances, omit observations more than six bandwidths from an evaluation
+point; the omitted Gaussian tail mass is below $2\times10^{-9}$. Normalize the
+fused grid once at the end.
 
 ### 3. Boundary-repair coordinator
 
-This helper owns endpoint distances, average ranks for ties, classification,
-local component calls, CDF gates, reflection, and fusion. Use
-`tools::get_order()` locally; do not add a general ranking API unless another
-production caller needs it.
+This helper owns endpoint distances, classification, local component calls,
+CDF weights, reflection, and fusion.
 
 For an upper endpoint, compute on ascending reflected distances and reverse the
 component once. The floor fraction is the only local-component policy that
@@ -139,7 +133,7 @@ differs between one- and two-sided support.
 The helper should return an empty result when every endpoint selects bulk.
 `Kde1d::fit()` can then leave the already constructed bulk grid untouched.
 
-## Gate and fusion
+## Weights and fusion
 
 Let $F_B(x)$ be the bulk CDF and
 
@@ -161,7 +155,7 @@ $$
 w_U(x)=1-s\left(\min\{1,(1-F_B(x))/q_n\}\right).
 $$
 
-Set the gate of every bulk-classified endpoint to zero. The final values are
+Set the weight of every bulk-classified endpoint to zero. The final values are
 
 $$
 \widehat f(x)=
@@ -170,7 +164,7 @@ w_L(x)\widehat f_L(x)
 +w_U(x)\widehat f_U(x).
 $$
 
-With $q_n\leq0.25$, the endpoint gates do not overlap. The same expression
+With $q_n\leq0.25$, the endpoint weights do not overlap. The same expression
 covers one-sided support by setting the absent endpoint weight to zero. Clamp
 the fused values at zero and construct a normalized `InterpolationGrid` on the
 existing original-scale grid.
@@ -182,15 +176,14 @@ holds the selected bandwidth and final grid normalization fixed. Extend the
 same convention to expert selection and fusion rather than returning `NaN`.
 
 For a degree-$p$ boundary component, let $M_p(a)$ be the truncated-normal
-moment matrix above, let $h_p$ be its final bandwidth, let $Z_p$ be the mass
-used to normalize its nonnegative density, and let $\widetilde f_p$ denote its
-value before clamping and normalization. Its diagonal density response is
+moment matrix above, let $h$ be the shared bandwidth, and let
+$\widetilde f_p$ denote its value before clamping. Its influence numerator is
 
 $$
-r_p(x)=
-\frac{\mathbf 1\{\widetilde f_p(x)>0\}}{Z_p}
-\frac{\phi(0)}{n h_p}
-\left[M_p\{d(x)/h_p\}^{-1}\right]_{00}.
+\nu_p(x)=
+\mathbf 1\{\widetilde f_p(x)>0\}
+\frac{\phi(0)}{n h}
+\left[M_p\{d(x)/h\}^{-1}\right]_{00}.
 $$
 
 Only the constant equivalent-kernel coefficient remains because a
@@ -200,26 +193,26 @@ expert, use
 $$
 f_E(x)=\frac{f_1(x)+f_2(x)}{2},
 \qquad
-r_E(x)=\frac{r_1(x)+r_2(x)}{2}.
+\nu_E(x)=\frac{\nu_1(x)+\nu_2(x)}{2}.
 $$
 
 For the bulk component, the existing influence column is its log-density
-leverage $\ell_B(x)$, so its diagonal density response is
-$r_B(x)=f_B(x)\ell_B(x)$. Fuse the responses with exactly the same gates as the
-densities:
+leverage $\ell_B(x)$, so its influence numerator is
+$\nu_B(x)=f_B(x)\ell_B(x)$. Fuse the numerators with exactly the same weights
+as the densities:
 
 $$
 \begin{aligned}
 g(x)&=w_L(x)f_L(x)
  +\{1-w_L(x)-w_U(x)\}f_B(x)+w_U(x)f_U(x),\\
-r(x)&=w_L(x)r_L(x)
- +\{1-w_L(x)-w_U(x)\}r_B(x)+w_U(x)r_U(x),\\
-\ell(x)&=\frac{r(x)}{g(x)}.
+\nu(x)&=w_L(x)\nu_L(x)
+ +\{1-w_L(x)-w_U(x)\}\nu_B(x)+w_U(x)\nu_U(x),\\
+\ell(x)&=\frac{\nu(x)}{g(x)}.
 \end{aligned}
 $$
 
 Thus the mixture leverage is weighted by local density shares, not just by
-the gate values. Estimate
+the fusion weights. Estimate
 
 $$
 \operatorname{edf}=\sum_{i=1}^n
@@ -227,10 +220,10 @@ $$
 $$
 
 retaining the current per-observation cap. The final common normalization of
-$g$ and $r$ cancels in their ratio when its derivative is ignored.
+$g$ and $\nu$ cancels in their ratio when its derivative is ignored.
 
 This approximation conditions on bandwidths, endpoint classifications, CDF
-gates, clamp states, and normalization constants. It deliberately omits the
+weights, clamp states, and normalization constants. It deliberately omits the
 derivatives of those data-adaptive choices. That keeps it consistent with the
 existing EDF convention and costs only additional grid-vector arithmetic; no
 refits or per-observation matrices are needed. Validate it diagnostically
@@ -242,24 +235,23 @@ $$
 $$
 
 First confirm that this diagnostic reproduces the existing bulk EDF to the
-expected approximation error. A gate-derivative correction is worth
+expected approximation error. A weight-derivative correction is worth
 considering only if the active-expert comparison then shows an additional
 systematic discrepancy.
 
 ## Weights and remaining fit metadata
 
-The experts' rank weights affect bandwidth selection only; density
-contributions remain equally weighted, matching the validated estimand. The
-first native implementation falls back to bulk when public case weights are
-supplied because those weights genuinely change the estimand. Defining
-weighted ranks, effective sample size, weighted tail indices, and weighted
-confidence adjustments is a separate statistical task.
+Expert density contributions remain equally weighted, matching the validated
+estimand. The native implementation falls back to bulk when public case
+weights are supplied because those weights genuinely change the estimand.
+Defining effective sample size, weighted tail indices, and weighted confidence
+adjustments is a separate statistical task.
 
 Recompute `loglik_` from the final grid using the existing code. Use the
 conditional mixture trace above for `edf_` whenever a finite expert is active,
 and retain the current calculation unchanged for pure-bulk fits.
 
-No classifier choice, tail index, boundary bandwidth, or gate state needs to
+No classifier choice, tail index, boundary bandwidth, or weight state needs to
 persist in the fitted object for the first implementation. Diagnostic values
 belong in tests and validation scripts rather than the public class layout.
 
@@ -271,7 +263,7 @@ The intended implementation footprint is:
    - preserve original-scale cleaned observations;
    - add the three private helpers;
    - call the coordinator after bulk-grid construction;
-   - carry the bulk and expert diagonal responses through fusion for EDF.
+   - carry the bulk and expert influence numerators through fusion for EDF.
 2. `test/test.cpp`
    - deterministic golden results and fallback behavior.
 3. `test/test_numerical_invariants.cpp`
@@ -317,18 +309,17 @@ the initial implementation remains reviewable.
 
 ### Public case weights
 
-Public case weights change the target density, unlike the endpoint-targeting
-weights used only to select expert bandwidths. A weighted expert should
-therefore use public case weights for density contributions and use the product
-of public and endpoint-targeting weights for bandwidth selection. Before
-activation, compare and validate choices for:
+Public case weights change the target density. A weighted expert should
+therefore use public case weights for density contributions and define the
+bandwidth subset by cumulative public weight. Before activation, compare and
+validate choices for:
 
-- weighted average ranks and endpoint distances;
+- weighted endpoint distances;
 - effective sample size in $k$, $q_n$, and the classifier confidence term;
 - a weighted order-statistic tail index;
 - defining the closest 75% floor by cumulative public weight rather than row
   count;
-- weighted diagonal responses and EDF validation.
+- weighted influence numerators and EDF validation.
 
 Experiments should include highly unequal weights, weights concentrated near
 and far from the boundary, zero weights, global rescaling of all weights, and

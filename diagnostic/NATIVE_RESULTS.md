@@ -34,10 +34,41 @@ Beta$(2,0.75)$ has 1.027/1.026. Gamma$(2)$ and Beta$(2,2)$ select bulk in every
 large-sample replication and are exactly unchanged. Uniform, Beta$(1,2)$, and
 Beta$(2,1)$ have $n=2000$ global ratios 0.844, 0.817, and 0.830.
 
-The deterministic native tests agree with the retained R reference values to
-within $2\times10^{-4}$ relative tolerance and cover lower/upper reflection,
-independent two-sided endpoint decisions, exploding/vanishing fallback, and
-affine support changes.
+The deterministic native tests cover lower/upper reflection, independent
+two-sided endpoint decisions, exploding/vanishing fallback, and affine support
+changes. Their golden values were refreshed for the simplified evaluator.
+
+## Runtime simplification ablation
+
+The direct native evaluator was simplified after the main validation. The
+local-linear and local-quadratic equivalent kernels now share the degree-2
+bandwidth and are averaged in one observation loop. On bounded support this
+bandwidth uses all endpoint distances; on one-sided support it uses the closest
+75%. Endpoint kernels are evaluated only where their smooth fusion weights are
+nonzero, Gaussian terms beyond six bandwidths are omitted, and the fused grid
+is normalized once at the end.
+
+A paired 100-replication check compared this implementation with commit
+`cbde530` over Exponential, half-normal, Gamma$(2)$, Gamma$(0.75)$, Lomax$(2)$,
+Uniform, Beta$(1,2)$, Beta$(0.75,2)$, Beta$(0.75,0.75)$, and Beta$(2,2)$.
+Ratios compare the simplified evaluator with `cbde530`; parentheses contain
+paired Monte Carlo standard errors:
+
+| support | $n$ | global ISE ratio | boundary ISE ratio |
+|---|---:|---:|---:|
+| one-sided | 25 | 0.996 (0.002) | 0.999 (0.004) |
+| one-sided | 100 | 0.983 (0.003) | 0.982 (0.003) |
+| one-sided | 1000 | 0.993 (0.003) | 0.992 (0.003) |
+| one-sided | 2000 | 0.992 (0.003) | 0.991 (0.003) |
+| two-sided | 25 | 1.010 (0.003) | 1.014 (0.006) |
+| two-sided | 100 | 0.999 (0.002) | 1.002 (0.004) |
+| two-sided | 1000 | 0.999 (0.003) | 0.992 (0.004) |
+| two-sided | 2000 | 0.994 (0.003) | 0.986 (0.004) |
+
+The largest scenario-level increases were about 3.5% for Gamma$(0.75)$ and
+3.9% for Beta$(0.75,0.75)$; Uniform, Beta$(1,2)$, Exponential, half-normal,
+and Lomax generally improved. This supports the simpler shared-bandwidth
+kernel average without a material aggregate accuracy cost.
 
 ## EDF check
 
@@ -51,24 +82,23 @@ For deterministic finite-endpoint samples at $n=25,50,100$, the discrepancy
 was 0.08--0.30 EDF units for Uniform and Exponential examples. The asymmetric
 Beta$(1,2)$ discrepancy was 0.27--0.33 at $n=50,100$ and 0.84 at $n=25$.
 This is adequate for the existing asymptotic EDF convention and does not
-justify a gate-derivative correction. Pure-bulk fits retain the old EDF
+justify a weight-derivative correction. Pure-bulk fits retain the old EDF
 exactly.
 
 ## Fit time
 
 Release builds were timed against `4f3d148`. Bulk-classified fits incur only
-sorting and remained within about 3% of baseline for $n=100$--$2000$. Active
-experts cost more because the concise implementation directly evaluates the
-Gaussian kernels on the 401-point grid:
+sorting and remain close to baseline. With a 401-point output grid, the
+simplified active-expert timings are:
 
 | active endpoints | $n=100$ | $n=1000$ | $n=2000$ |
 |---|---:|---:|---:|
-| one | 1.70 ms (4.4x) | 5.93 ms (12.4x) | 10.67 ms (18.5x) |
-| two | 2.90 ms (7.5x) | 10.41 ms (23.5x) | 18.84 ms (36.7x) |
+| one | 0.65 ms (1.7x) | 0.94 ms (2.0x) | 1.22 ms (2.1x) |
+| two | 0.78 ms (2.0x) | 1.63 ms (3.7x) | 2.26 ms (4.4x) |
 
-The absolute cost remains below 20 ms at $n=2000$. Keep the direct evaluator
-for the first PR; optimize only if downstream profiling shows fit time is
-material.
+Relative to `cbde530`, this is a speedup of 2.6--8.7x for one active endpoint
+and 3.7--8.3x for two. Absolute expert-fit cost remains below 2.3 ms at
+$n=2000$ in this benchmark.
 
 ## Reproduction
 

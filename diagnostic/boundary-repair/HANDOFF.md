@@ -4,9 +4,10 @@
 
 The directory now contains one experimental estimator for continuous data
 with two known finite bounds. It fits the current probit bulk estimator once,
-adds an equal local-linear/local-quadratic expert for confidently finite
-endpoints, and otherwise reuses bulk. Smooth CDF-scale gates shrink as
-$n^{-1/2}$. The finite-endpoint classifier uses
+adds an averaged local-linear/local-quadratic kernel expert for confidently
+finite endpoints, and otherwise reuses bulk. The kernels share one degree-2
+bandwidth and smooth CDF-scale weights shrink as $n^{-1/2}$. The
+finite-endpoint classifier uses
 $k=\min(n-1,\lceil2\sqrt n\rceil)$ order statistics and a 95% decision.
 
 There is no exploding-tail expert, power warp, transformation offset, or CV
@@ -33,7 +34,7 @@ as the first two arguments to either simulation script.
 - The R reference assumes support $[0,1]$; native code must apply an affine
   map for arbitrary finite bounds.
 - Weighted observations have not been specified or validated for the tail
-  index, weighted ranks, or shrinking gate.
+  index or shrinking weights.
 - The finite-versus-bulk decision is hard, so between-sample endpoint behavior
   can still change discretely.
 - Before release, test affine support changes, weaker and stronger endpoint

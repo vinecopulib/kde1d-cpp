@@ -3,10 +3,10 @@
 The production branch already uses a scale-equivariant power-$3/4$ transform
 for one-sided supports. The diagnostic candidate keeps that estimator as the
 unweighted bulk and adds the selected two-boundary method's finite expert:
-equal local-linear/local-quadratic estimates, a shrinking CDF gate, and a
+an averaged local-linear/local-quadratic kernel, a shrinking CDF weight, and a
 $2\sqrt n$ order-statistic finite-versus-bulk decision.
 
-The bandwidth floor is the unweighted bandwidth fitted to the lowest 75% of
+The native kernels share the degree-2 bandwidth fitted to the lowest 75% of
 boundary distances. A 30-replication ablation compared fixed fractions from
 15% through 100% and a $\sqrt n$ shrinking subset. Performance improved up to
 75%; using all observations reversed the long-tail gains because remote Lomax
