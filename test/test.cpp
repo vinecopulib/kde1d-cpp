@@ -121,10 +121,9 @@ TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.01, 5.0);
   Kde1d left_bounded(0.0, NAN, "continuous");
   left_bounded.fit(observations);
-  Kde1d bulk(0.0, NAN, "continuous", 1.0, left_bounded.get_bandwidth());
-  bulk.fit(observations);
-  CHECK((left_bounded.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() >
-        0.01);
+  Kde1d manual(0.0, NAN, "continuous", 1.0, left_bounded.get_bandwidth());
+  manual.fit(observations);
+  CHECK(left_bounded.get_values().isApprox(manual.get_values(), 1e-12));
 
   Kde1d right_bounded(NAN, 0.0, "continuous");
   right_bounded.fit(-observations);
@@ -146,10 +145,9 @@ TEST_CASE("one-sided finite endpoints use the boundary expert",
   Kde1d fit(0.0, NAN, "continuous");
   fit.fit(observations);
 
-  // A manual fit with the selected bulk bandwidth bypasses boundary repair.
-  Kde1d bulk(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
-  bulk.fit(observations);
-  CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
+  Kde1d manual(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
+  manual.fit(observations);
+  CHECK(fit.get_values().isApprox(manual.get_values(), 1e-12));
 
   Eigen::VectorXd expected_density(6);
   expected_density << 0.9884817, 0.9885018, 0.9865198, 0.9465577, 0.7315411,
@@ -193,9 +191,9 @@ TEST_CASE("two-sided finite endpoints use the boundary experts",
   Kde1d fit(0.0, 1.0, "continuous");
   fit.fit(observations);
 
-  Kde1d bulk(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
-  bulk.fit(observations);
-  CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
+  Kde1d manual(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
+  manual.fit(observations);
+  CHECK(fit.get_values().isApprox(manual.get_values(), 1e-12));
 
   Eigen::VectorXd expected_density(6);
   expected_density << 0.9993158, 0.9992803, 0.9985546, 1.0001208, 0.9985473,

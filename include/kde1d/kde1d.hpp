@@ -342,13 +342,12 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
-  // Nonconstant case weights and manual bandwidths need separate expert
-  // semantics; constant weights are equivalent to an unweighted sample.
+  // Nonconstant case weights need separate expert semantics; constant weights
+  // are equivalent to an unweighted sample.
   const bool unweighted = w.size() == 0 || w.minCoeff() == w.maxCoeff();
   const bool use_boundary_repair =
     type_ == VarType::continuous && xx.size() >= 16 && unweighted &&
-    std::isnan(bandwidth_spec_) && degree_ == 2 &&
-    (!std::isnan(xmin_) || !std::isnan(xmax_));
+    degree_ == 2 && (!std::isnan(xmin_) || !std::isnan(xmax_));
   Eigen::VectorXd boundary_observations;
   if (use_boundary_repair)
     boundary_observations = xx;
