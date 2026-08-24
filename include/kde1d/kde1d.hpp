@@ -348,12 +348,12 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // Nonconstant case weights and manual bandwidths need separate expert
   // semantics; constant weights are equivalent to an unweighted sample.
   const bool unweighted = w.size() == 0 || w.minCoeff() == w.maxCoeff();
-  const bool repair_one_sided = type_ == VarType::continuous &&
-                                xx.size() >= 16 && unweighted &&
-                                std::isnan(bandwidth_spec_) && degree_ == 2 &&
-                                (std::isnan(xmin_) != std::isnan(xmax_));
+  const bool use_boundary_repair =
+    type_ == VarType::continuous && xx.size() >= 16 && unweighted &&
+    std::isnan(bandwidth_spec_) && degree_ == 2 &&
+    (!std::isnan(xmin_) || !std::isnan(xmax_));
   Eigen::VectorXd boundary_observations;
-  if (repair_one_sided)
+  if (use_boundary_repair)
     boundary_observations = xx;
 
   if (w.size() > 0) {
@@ -426,7 +426,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // construct interpolation grid
   // (3 iterations for normalization to a proper density)
   grid_ = interp::InterpolationGrid(grid_points, values, 3);
-  if (repair_one_sided)
+  if (use_boundary_repair)
     repair_boundaries(boundary_observations, grid_points, influences);
 
   // calculate log-likelihood of final estimate

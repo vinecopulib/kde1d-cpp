@@ -181,6 +181,78 @@ TEST_CASE("one-sided vanishing endpoints retain the bulk fit",
   CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
 }
 
+TEST_CASE("two-sided finite endpoints use the boundary experts",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd observations =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Kde1d bulk(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK((fit.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() > 0.01);
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 1.0368661, 1.0367788, 1.0250191, 0.9972352, 1.0231640,
+    1.0368661;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(49),
+    fit.get_values()(99), fit.get_values()(199), fit.get_values()(299),
+    fit.get_values()(400);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+  CHECK(std::isfinite(fit.get_edf()));
+
+  Kde1d scaled(-3.0, 7.0, "continuous");
+  scaled.fit(-3.0 + 10.0 * observations.array());
+  CHECK(((scaled.get_grid_points().array() + 3.0) / 10.0)
+          .matrix()
+          .isApprox(fit.get_grid_points(), 1e-12));
+  CHECK((10.0 * scaled.get_values()).isApprox(fit.get_values(), 1e-10));
+  CHECK(scaled.get_edf() == Approx(fit.get_edf()).epsilon(1e-10));
+}
+
+TEST_CASE("two-sided endpoints are classified independently",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations =
+    1.0 - (1.0 - probabilities.array()).sqrt();
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 1.9952890, 1.9913280, 1.9839701, 0.9946680, 0.0562144,
+    0.0000020;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(49),
+    fit.get_values()(99), fit.get_values()(199), fit.get_values()(299),
+    fit.get_values()(400);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+
+  Kde1d reflected(0.0, 1.0, "continuous");
+  reflected.fit(1.0 - observations.array());
+  CHECK(fit.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(fit.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("two-sided exploding endpoints retain the bulk fit",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations =
+    (0.5 * std::acos(-1.0) * probabilities.array()).sin().square();
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Kde1d bulk(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK(fit.get_values().isApprox(bulk.get_values(), 1e-12));
+  CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
+}
+
 TEST_CASE("finite support truncates density", "[finite-support]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.0, 1.0);
