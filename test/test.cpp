@@ -119,10 +119,14 @@ TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
 TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.01, 5.0);
-  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.5);
+  Kde1d left_bounded(0.0, NAN, "continuous");
   left_bounded.fit(observations);
+  Kde1d bulk(0.0, NAN, "continuous", 1.0, left_bounded.get_bandwidth());
+  bulk.fit(observations);
+  CHECK((left_bounded.get_values() - bulk.get_values()).cwiseAbs().maxCoeff() >
+        0.01);
 
-  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.5);
+  Kde1d right_bounded(NAN, 0.0, "continuous");
   right_bounded.fit(-observations);
 
   CHECK(left_bounded.get_grid_points().isApprox(

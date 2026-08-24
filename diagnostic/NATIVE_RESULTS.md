@@ -100,6 +100,32 @@ Relative to `cbde530`, this is a speedup of 2.6--8.7x for one active endpoint
 and 3.7--8.3x for two. Absolute expert-fit cost remains below 2.3 ms at
 $n=2000$ in this benchmark.
 
+### FFT evaluation
+
+The endpoint kernel can be written as a pointwise combination of an ordinary
+Gaussian KDE and its first two derivatives. The implementation now evaluates
+these three translation-invariant convolutions on a regular 256-bin grid and
+interpolates them to the endpoint grid.
+
+Against the direct endpoint evaluator, total fit times with the default
+401-point grid were:
+
+| active endpoints | $n$ | direct | FFT | speedup |
+|---|---:|---:|---:|---:|
+| one | 1000 | 0.93 ms | 0.78 ms | 1.19x |
+| one | 2000 | 1.21 ms | 0.92 ms | 1.32x |
+| two | 1000 | 1.62 ms | 0.84 ms | 1.93x |
+| two | 2000 | 2.25 ms | 0.96 ms | 2.35x |
+
+The direct-kernel fallback was removed after a separate $n=25,100$ benchmark.
+Across 51--401 grid points, the worst total-fit slowdown from always using FFT
+was 1.25x. With the default grid at $n=100$, one endpoint slowed from 0.64 to
+0.67 ms while two endpoints improved slightly from 0.77 to 0.74 ms. In the
+100-replication validation suite, the mean relative ISE perturbation from FFT
+binning was at most 0.011% for every support/sample-size group. Among fits
+whose endpoint expert was active, the median absolute paired ISE change was
+0.023%, the 99th percentile was 0.18%, and the maximum was 0.66%.
+
 ## Reproduction
 
 Install the package with a clean native rebuild at each revision and run
