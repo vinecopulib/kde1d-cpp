@@ -255,7 +255,7 @@ TEST_CASE("two-sided exploding endpoints retain the bulk fit",
   CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
 }
 
-TEST_CASE("unsupported expert options retain the transformed bulk fit",
+TEST_CASE("boundary experts support weights and manual bandwidths",
           "[boundary-expert]")
 {
   const Eigen::VectorXd probabilities =
@@ -266,10 +266,43 @@ TEST_CASE("unsupported expert options retain the transformed bulk fit",
 
   Kde1d weighted(0.0, NAN, "continuous");
   weighted.fit(observations, weights);
-  Kde1d weighted_bulk(0.0, NAN, "continuous", 1.0, weighted.get_bandwidth());
-  weighted_bulk.fit(observations, weights);
-  CHECK(weighted.get_values().isApprox(weighted_bulk.get_values(), 1e-12));
-  CHECK(weighted.get_edf() == Approx(weighted_bulk.get_edf()).epsilon(1e-12));
+  Kde1d weighted_manual(0.0, NAN, "continuous", 1.0, weighted.get_bandwidth());
+  weighted_manual.fit(observations, weights);
+  CHECK(weighted.get_values().isApprox(weighted_manual.get_values(), 1e-12));
+  CHECK(weighted.get_edf() == Approx(weighted_manual.get_edf()).epsilon(1e-12));
+
+  Kde1d rescaled_weights(0.0, NAN, "continuous");
+  rescaled_weights.fit(observations, 7.0 * weights);
+  CHECK(weighted.get_values().isApprox(rescaled_weights.get_values(), 1e-12));
+  CHECK(weighted.get_edf() ==
+        Approx(rescaled_weights.get_edf()).epsilon(1e-12));
+  CHECK(weighted.get_loglik() ==
+        Approx(rescaled_weights.get_loglik()).epsilon(1e-12));
+
+  Eigen::VectorXd zero_weights = weights;
+  for (Eigen::Index i = 1; i < zero_weights.size(); i += 5)
+    zero_weights(i) = 0.0;
+  Eigen::VectorXd retained_observations(160);
+  Eigen::VectorXd retained_weights(160);
+  Eigen::Index retained_index = 0;
+  for (Eigen::Index i = 0; i < zero_weights.size(); ++i) {
+    if (zero_weights(i) > 0.0) {
+      retained_observations(retained_index) = observations(i);
+      retained_weights(retained_index++) = zero_weights(i);
+    }
+  }
+  Kde1d with_zeros(0.0, NAN, "continuous");
+  with_zeros.fit(observations, zero_weights);
+  Kde1d without_zeros(0.0, NAN, "continuous");
+  without_zeros.fit(retained_observations, retained_weights);
+  CHECK(with_zeros.get_values().isApprox(without_zeros.get_values(), 1e-12));
+  CHECK(with_zeros.get_edf() == Approx(without_zeros.get_edf()).epsilon(1e-12));
+
+  Kde1d reflected(NAN, 0.0, "continuous");
+  reflected.fit(-observations, weights);
+  CHECK(
+    weighted.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(weighted.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
 
   Kde1d linear(0.0, NAN, "continuous", 1.0, NAN, 1);
   linear.fit(observations);

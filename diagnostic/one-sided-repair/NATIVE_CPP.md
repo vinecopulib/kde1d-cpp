@@ -13,24 +13,20 @@ path:
 The existing transformed estimator remains the bulk component in both cases.
 Unbounded continuous, discrete, and zero-inflated behavior remains unchanged.
 
-The first native version should activate only for samples of at least 16
-observations, unweighted or constant-weight fits, an automatically selected
-bandwidth, and the default degree two. Nonconstant weighted fits, explicit
-bandwidths, and nondefault degrees retain the current estimator until
-their expert semantics have been specified and validated. This is the first
-implementation milestone, not the intended final support boundary: experiments
-and subsequent activation for weighted and manual-bandwidth fits are important
-follow-up work. Keep the bandwidth multiplier supported immediately by
-applying it to every expert bandwidth after selection and flooring.
+The production estimator activates for degree-two continuous fits with at least
+16 observations and effective sample size at least 16. Public case weights and
+manual bandwidths are supported. Nondefault degrees retain the transformed
+bulk estimator pending separate evaluation. Apply the bandwidth multiplier to
+every expert bandwidth after selection and flooring.
 
 Do not add a public method switch or another fitted-object representation.
 
 ## Minimal integration point
 
 Call the repair coordinator only when `type_ == VarType::continuous`, at least
-one support bound is finite, at least 16 cleaned observations remain, case
-weights are absent or constant, `bandwidth_spec_` is `NaN`, and `degree_ == 2`.
-This makes every initial fallback condition explicit at a single call site.
+one support bound is finite, at least 16 cleaned observations remain, and
+`degree_ == 2`. The coordinator additionally retains the bulk fit when the
+effective sample size is below 16.
 
 Keep the current body of `Kde1d::fit()` through construction of the normalized
 bulk `InterpolationGrid`. Preserve the cleaned observations on their original
@@ -241,11 +237,13 @@ systematic discrepancy.
 
 ## Weights and remaining fit metadata
 
-Expert density contributions remain equally weighted, matching the validated
-estimand. The native implementation falls back to bulk when public case
-weights are supplied because those weights genuinely change the estimand.
-Defining effective sample size, weighted tail indices, and weighted confidence
-adjustments is a separate statistical task.
+Expert density contributions use the normalized public case weights, matching
+the weighted bulk estimand. Effective sample size determines the minimum sample
+check, fusion width, tail order, and classifier confidence. The weighted
+classifier uses a conservative lower threshold of 0.975. The one-sided
+bandwidth uses the closest 75% of positive-weight observations by row count and
+passes their case weights to the plug-in selector. The influence numerator uses
+the local average case weight on the FFT grid.
 
 Recompute `loglik_` from the final grid using the existing code. Use the
 conditional mixture trace above for `edf_` whenever a finite expert is active,
@@ -300,63 +298,43 @@ public getters unless implementation evidence shows that it is necessary.
 Each step should be a separately testable commit. Avoid refactoring unrelated
 fit logic while implementing the method.
 
-## Important follow-up: weights and manual bandwidths
+## Weighted and manual-bandwidth resolution
 
-Do not close the estimator work after the initial unweighted, automatic-
-bandwidth activation. Keep the following experiments and production activation
-as explicit roadmap items, preferably in follow-up commits or a follow-up PR so
-the initial implementation remains reviewable.
+Manual bandwidths control only the transformed bulk fit. Boundary bandwidths
+remain independently selected in original data units, exactly as when the bulk
+bandwidth is automatic. The public multiplier remains the common smoothing
+control and scales both bulk and expert bandwidths.
 
-### Public case weights
+Weighted experiments rejected defining the one-sided 75% bandwidth subset by
+cumulative weight: concentrated weights made that subset too narrow and
+unstable. Counting positive-weight observations was both simpler and more
+accurate. Effective sample size gave a small but consistent improvement for the
+fusion width under concentrated weights. A weighted classifier threshold of
+0.975 avoided most false repair of exploding targets while retaining the
+finite-boundary gains. Global weight rescaling and insertion or removal of
+zero-weight observations are numerically invariant.
 
-Public case weights change the target density. A weighted expert should
-therefore use public case weights for density contributions and define the
-bandwidth subset by cumulative public weight. Before activation, compare and
-validate choices for:
+Integer-weight replication equivalence is not required here because the
+existing bulk bandwidth selector interprets public weights through effective
+sample size rather than as frequency counts. Supporting frequency weights
+would require a separate change to the bulk estimator's weight semantics.
 
-- weighted endpoint distances;
-- effective sample size in $k$, $q_n$, and the classifier confidence term;
-- a weighted order-statistic tail index;
-- defining the closest 75% floor by cumulative public weight rather than row
-  count;
-- weighted influence numerators and EDF validation.
+### Required follow-up: degrees zero and one
 
-Experiments should include highly unequal weights, weights concentrated near
-and far from the boundary, zero weights, global rescaling of all weights, and
-integer weights compared with explicitly replicated observations. Require
-weight-scale invariance, approximate replication equivalence, stable endpoint
-classification, and acceptable global/boundary ISE before removing the
-weighted fallback.
+Keep boundary-expert activation for `degree_ < 2` as an important open task.
+The current estimator must continue to retain the transformed bulk fit for
+these degrees until this is evaluated. Compare at least:
 
-### Manually specified bandwidths
+- retaining the averaged local-linear/local-quadratic boundary expert for all
+  bulk degrees;
+- matching the endpoint expert to the requested bulk degree;
+- using local linear at the endpoint for both degree-zero and degree-one bulk
+  fits.
 
-A manual bulk bandwidth is expressed on the transformed scale, whereas local
-boundary bandwidths are expressed in original data units. Reusing the same
-number for both is therefore invalid. The leading candidate is to compute the
-automatic bulk reference bandwidth $h_{B,0}$ and interpret the manual choice
-$h_B$ through the dimensionless ratio
-
-$$
-\rho=\frac{h_B}{h_{B,0}},
-$$
-
-then multiply every automatically selected and floored expert bandwidth by
-$\rho$. This preserves the requested bulk bandwidth while treating it as a
-global smoothing adjustment. Compare this with leaving expert bandwidths
-automatic when only the bulk bandwidth is manual; reject direct numerical
-reuse across scales.
-
-Run the comparison over manual-to-automatic ratios such as $0.5$, $0.75$, $1$,
-$1.5$, and $2$, several support rescalings, both support types, finite and
-exploding endpoint shapes, and representative visual fits. Include the extra
-cost of computing $h_{B,0}$ in the manual case. Activate manual-bandwidth fits
-only after selecting and documenting one interpretation that preserves affine
-equivariance and behaves predictably with `multiplier_`.
-
-Finally test weighted and manual bandwidths together after each has been
-validated separately. Nondefault local-likelihood degrees remain a lower-
-priority extension because the selected boundary expert deliberately averages
-degrees one and two.
+Evaluate global and boundary ISE, bias and variance, visual boundary stability,
+EDF behavior, and runtime for both support types, including weighted and manual-
+bandwidth fits. Do not activate degrees zero or one based only on API symmetry;
+the selected degree-two expert deliberately averages degrees one and two.
 
 ## Native tests
 

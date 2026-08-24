@@ -191,13 +191,17 @@ private:
                           double multiplier,
                           size_t degree,
                           const Eigen::VectorXd& weights) const;
-  bool is_finite_endpoint(Eigen::VectorXd dist) const;
-  BoundaryComponent fit_boundary_component(const Eigen::VectorXd& dist,
-                                           const Eigen::VectorXd& eval_dist,
-                                           double bandwidth) const;
+  bool is_finite_endpoint(const Eigen::VectorXd& dist,
+                          const Eigen::VectorXd& weights) const;
+  BoundaryComponent fit_boundary_component(
+    const Eigen::VectorXd& dist,
+    const Eigen::VectorXd& eval_dist,
+    double bandwidth,
+    const Eigen::VectorXd& weights) const;
   void repair_boundaries(const Eigen::VectorXd& x,
                          const Eigen::VectorXd& grid,
-                         Eigen::VectorXd& influences);
+                         Eigen::VectorXd& influences,
+                         const Eigen::VectorXd& weights);
 
   std::string as_str(VarType type) const;
   VarType as_enum(std::string type) const;
@@ -342,12 +346,9 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
-  // Nonconstant case weights need separate expert semantics; constant weights
-  // are equivalent to an unweighted sample.
-  const bool unweighted = w.size() == 0 || w.minCoeff() == w.maxCoeff();
-  const bool use_boundary_repair =
-    type_ == VarType::continuous && xx.size() >= 16 && unweighted &&
-    degree_ == 2 && (!std::isnan(xmin_) || !std::isnan(xmax_));
+  const bool use_boundary_repair = type_ == VarType::continuous &&
+                                   xx.size() >= 16 && degree_ == 2 &&
+                                   (!std::isnan(xmin_) || !std::isnan(xmax_));
   Eigen::VectorXd boundary_observations;
   if (use_boundary_repair)
     boundary_observations = xx;
@@ -423,7 +424,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // (3 iterations for normalization to a proper density)
   grid_ = interp::InterpolationGrid(grid_points, values, 3);
   if (use_boundary_repair)
-    repair_boundaries(boundary_observations, grid_points, influences);
+    repair_boundaries(boundary_observations, grid_points, influences, w);
 
   // calculate log-likelihood of final estimate
   xx = boundary_transform(xx, true);
@@ -951,37 +952,53 @@ Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
 //! \widehat\beta = \frac{k}{\sum_{i=1}^k
 //!   \log\{d_{(k+1)} / d_{(i)}\}}.
 //! @f]
-//! It is treated as finite when @f$\widehat\beta \geq 0.9@f$ and its
-//! one-sided 95% lower confidence bound does not exceed one. Ambiguous and
+//! It is treated as finite when @f$\widehat\beta \geq 0.9@f$ and its one-sided
+//! 95% lower confidence bound does not exceed one. The weighted threshold is
+//! 0.975 to avoid unstable repair of exploding targets. Ambiguous and
 //! numerically degenerate cases retain the bulk fit.
-//! @param dist distances of the observations from the support endpoint; copied
-//!   because the classifier sorts them.
+//! With nonconstant case weights, their effective sample size replaces @f$n@f$
+//! and the lower tail is defined by cumulative normalized weight.
+//! @param dist ordered distances of the observations from the support endpoint.
+//! @param weights correspondingly ordered case weights with mean one.
 //! @return whether the endpoint is confidently classified as finite.
 inline bool
-Kde1d::is_finite_endpoint(Eigen::VectorXd dist) const
+Kde1d::is_finite_endpoint(const Eigen::VectorXd& dist,
+                          const Eigen::VectorXd& weights) const
 {
-  std::sort(dist.data(), dist.data() + dist.size());
+  const double n_eff = weights.sum() * weights.sum() / weights.squaredNorm();
+  if (!(n_eff > 1.0) || !std::isfinite(n_eff))
+    return false;
 
-  // k is the number of lower order statistics; dist_k1 is d_(k+1).
-  const size_t k =
-    std::min(static_cast<size_t>(dist.size() - 1),
-             static_cast<size_t>(std::ceil(2.0 * std::sqrt(dist.size()))));
-  const double dist_k1 = dist(k);
+  // Scale weights to effective counts and locate the (k+1)th weighted order
+  // statistic, where k = min(n_eff, ceil(2 sqrt(n_eff))).
+  const Eigen::VectorXd counts = weights * n_eff / weights.sum();
+  const double target =
+    std::min(std::nextafter(n_eff, 0.0), std::ceil(2.0 * std::sqrt(n_eff)));
+  Eigen::Index k1 = 0;
+  double cumulative = counts(0);
+  while (cumulative <= target && k1 + 1 < dist.size())
+    cumulative += counts(++k1);
+  const double dist_k1 = dist(k1);
   if (!(dist_k1 > 0.0) || !std::isfinite(dist_k1))
     return false;
 
-  // denom is the denominator of the lower-tail index beta = k / denom.
+  // tail_mass and denom define the weighted lower-tail index beta.
+  double tail_mass = 0.0;
   double denom = 0.0;
   const double dist_min = std::numeric_limits<double>::epsilon() * dist_k1;
-  for (size_t i = 0; i < k; ++i) {
-    denom += std::log(dist_k1 / std::max(dist(i), dist_min));
+  for (Eigen::Index i = 0; i < k1; ++i) {
+    tail_mass += counts(i);
+    denom += counts(i) * std::log(dist_k1 / std::max(dist(i), dist_min));
   }
-  if (!(denom > 0.0) || !std::isfinite(denom))
+  if (!(tail_mass > 0.0) || !(denom > 0.0) || !std::isfinite(denom))
     return false;
 
-  const double beta = static_cast<double>(k) / denom;
+  const double beta = tail_mass / denom;
   // 1.64485 is the 95% standard-normal quantile used by the R selector.
-  return beta >= 0.9 && beta * (1.0 - 1.6448536269514722 / std::sqrt(k)) <= 1.0;
+  const double beta_min =
+    weights.minCoeff() == weights.maxCoeff() ? 0.9 : 0.975;
+  return beta >= beta_min &&
+         beta * (1.0 - 1.6448536269514722 / std::sqrt(tail_mass)) <= 1.0;
 }
 
 //! Fits the average of Gaussian local-linear and local-quadratic equivalent
@@ -992,7 +1009,7 @@ Kde1d::is_finite_endpoint(Eigen::VectorXd dist) const
 //! \begin{align*}
 //! a &= t/h, & u_i &= (t-d_i)/h, \\[2pt]
 //! \widehat f_p(t;h)
-//!   &= \frac{1}{nh}\sum_{i=1}^n \phi(u_i)\,
+//!   &= \frac{1}{nh}\sum_{i=1}^n w_i\phi(u_i)\,
 //!      e_0^\mathsf{T}M_p(a)^{-1}
 //!      (1,u_i,\ldots,u_i^p)^\mathsf{T}, \\[2pt]
 //! \widehat f_\partial(t)
@@ -1010,16 +1027,18 @@ Kde1d::is_finite_endpoint(Eigen::VectorXd dist) const
 //! \end{align*}
 //! @f]
 //! This identity evaluates the three convolutions by FFT.
-//! Observations contribute equally to both kernels. The returned influence
-//! numerator is the corresponding average diagonal kernel contribution.
+//! Both kernels use the same normalized case weights @f$w_i@f$. The returned
+//! influence numerator is the corresponding average diagonal contribution.
 //! @param dist ordered distances of the observations from the support endpoint.
 //! @param eval_dist endpoint distances at which to evaluate the component.
 //! @param bandwidth shared bandwidth of both equivalent kernels.
+//! @param weights correspondingly ordered case weights with mean one.
 //! @return the density and influence numerator on `eval_dist`.
 inline Kde1d::BoundaryComponent
 Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
                               const Eigen::VectorXd& eval_dist,
-                              double bandwidth) const
+                              double bandwidth,
+                              const Eigen::VectorXd& weights) const
 {
   const double h = bandwidth;
   if (!(h > 0.0) || !std::isfinite(h))
@@ -1036,18 +1055,27 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
   const double* last =
     std::upper_bound(dist.data(), dist.data() + dist.size(), fft_upper);
   const Eigen::Index n_fft = last - dist.data();
-  if (n_fft == 0)
+  const double fft_weight = weights.head(n_fft).sum();
+  if (n_fft == 0 || !(fft_weight > 0.0))
     return fit;
 
   // This resolution kept the worst paired ISE perturbation below 0.7%.
   const size_t num_bins = 256;
   fft::KdeFFT kde_fft(
-    dist.head(n_fft), h, 0.0, fft_upper, Eigen::VectorXd(), num_bins);
-  const double scale =
-    static_cast<double>(n_fft) / static_cast<double>(dist.size());
+    dist.head(n_fft), h, 0.0, fft_upper, weights.head(n_fft), num_bins);
+  const double scale = fft_weight / weights.sum();
   const Eigen::VectorXd f0 = scale * kde_fft.kde_drv(0);
   const Eigen::VectorXd f1 = scale * kde_fft.kde_drv(1);
   const Eigen::VectorXd f2 = scale * kde_fft.kde_drv(2);
+  Eigen::VectorXd local_weight = Eigen::VectorXd::Ones(num_bins + 1);
+  if (weights.minCoeff() != weights.maxCoeff()) {
+    const Eigen::VectorXd count = tools::linbin(
+      dist.head(n_fft), 0.0, fft_upper, num_bins, Eigen::VectorXd::Ones(n_fft));
+    local_weight = (count.array() == 0.0)
+                     .select(Eigen::VectorXd::Zero(count.size()),
+                             weights.head(n_fft).mean() *
+                               kde_fft.get_bin_counts().cwiseQuotient(count));
+  }
   for (Eigen::Index j = 0; j < eval_dist.size(); ++j) {
     // c1 and c2 are the first inverse-moment rows for degrees 1 and 2.
     const double a = eval_dist(j) / h;
@@ -1076,8 +1104,8 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
     fit.density(j) =
       0.5 * ((c10 + c20 + c22) * interpolate(f0) -
              h * (c11 + c21) * interpolate(f1) + h * h * c22 * interpolate(f2));
-    fit.influence_num(j) =
-      K0_ * (c10 + c20) / (2.0 * static_cast<double>(dist.size()) * h);
+    fit.influence_num(j) = K0_ * (c10 + c20) * interpolate(local_weight) /
+                           (2.0 * static_cast<double>(dist.size()) * h);
   }
 
   // Remove unstable local-polynomial values.
@@ -1095,11 +1123,12 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
 //! densities @f$\widehat f_L@f$ and @f$\widehat f_U@f$. Each endpoint density
 //! averages local-linear and local-quadratic kernels using one degree-2
 //! bandwidth, selected from all distances on bounded support and the closest
-//! 75% on one-sided support. Smooth weights @f$w_L@f$ and @f$w_U@f$ are
-//! functions of the bulk CDF and shrink at rate @f$\min(1/4,n^{-1/2})@f$:
+//! 75% of positive-weight observations on one-sided support. Smooth weights
+//! @f$w_L@f$ and @f$w_U@f$ are functions of the weighted bulk CDF and shrink
+//! with effective sample size @f$n_e@f$:
 //! @f[
 //! \begin{align*}
-//! q &= \min(1/4,n^{-1/2}), & z(p) &= \min(1,p/q), \\[2pt]
+//! q &= \min(1/4,n_e^{-1/2}), & z(p) &= \min(1,p/q), \\[2pt]
 //! g(p) &= 1-3z(p)^2+2z(p)^3, \\[2pt]
 //! w_L &= g(F_B), & w_U &= g(1-F_B), \\[2pt]
 //! \widehat f
@@ -1115,28 +1144,51 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
 //! @param grid increasing evaluation grid on the original scale.
 //! @param influences on input, bulk-fit influences on `grid`; on output,
 //!   influences of the fused estimate.
+//! @param weights normalized case weights; empty means equal weights.
 inline void
 Kde1d::repair_boundaries(const Eigen::VectorXd& x,
                          const Eigen::VectorXd& grid,
-                         Eigen::VectorXd& influences)
+                         Eigen::VectorXd& influences,
+                         const Eigen::VectorXd& weights)
 {
   Eigen::VectorXd dist_lower;
   Eigen::VectorXd dist_upper;
+  Eigen::VectorXd weights_lower;
+  Eigen::VectorXd weights_upper;
+  const Eigen::VectorXd case_weights =
+    weights.size() > 0 ? weights : Eigen::VectorXd::Ones(x.size());
+  const double n_eff =
+    case_weights.sum() * case_weights.sum() / case_weights.squaredNorm();
+  if (n_eff < 16.0)
+    return;
+  auto sort_endpoint = [&](Eigen::VectorXd& dist,
+                           Eigen::VectorXd& sorted_weights) {
+    const Eigen::VectorXi order = tools::get_order(dist);
+    const Eigen::VectorXd unsorted_dist = dist;
+    for (Eigen::Index i = 0; i < dist.size(); ++i) {
+      dist(i) = unsorted_dist(order(i));
+      sorted_weights(i) = case_weights(order(i));
+    }
+  };
   bool repair_lower = !std::isnan(xmin_);
   bool repair_upper = !std::isnan(xmax_);
   if (repair_lower) {
     dist_lower = x.array() - xmin_;
-    repair_lower = is_finite_endpoint(dist_lower);
+    weights_lower.resize(x.size());
+    sort_endpoint(dist_lower, weights_lower);
+    repair_lower = is_finite_endpoint(dist_lower, weights_lower);
   }
   if (repair_upper) {
     dist_upper = xmax_ - x.array();
-    repair_upper = is_finite_endpoint(dist_upper);
+    weights_upper.resize(x.size());
+    sort_endpoint(dist_upper, weights_upper);
+    repair_upper = is_finite_endpoint(dist_upper, weights_upper);
   }
   if (!repair_lower && !repair_upper)
     return;
 
   // q is the shrinking probability width of each endpoint weight.
-  const double q = std::min(0.25, 1.0 / std::sqrt(x.size()));
+  const double q = std::min(0.25, 1.0 / std::sqrt(n_eff));
   auto endpoint_weight = [&](double probability) {
     const double z = std::min(1.0, probability / q);
     return 1.0 - (3.0 * z * z - 2.0 * z * z * z);
@@ -1159,20 +1211,31 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
   // Select one shared degree-2 bandwidth, using the local 75% one-sided rule.
   const double bw_fraction =
     (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
-  Eigen::VectorXd bw_dist = repair_lower ? dist_lower : dist_upper;
-  std::sort(bw_dist.data(), bw_dist.data() + bw_dist.size());
+  const Eigen::VectorXd endpoint_dist = repair_lower ? dist_lower : dist_upper;
+  const Eigen::VectorXd endpoint_weights =
+    repair_lower ? weights_lower : weights_upper;
+  const Eigen::Index n_positive = (endpoint_weights.array() > 0.0).count();
+  Eigen::VectorXd bw_dist(n_positive);
+  Eigen::VectorXd bw_weights(n_positive);
+  Eigen::Index positive_index = 0;
+  for (Eigen::Index i = 0; i < endpoint_dist.size(); ++i) {
+    if (endpoint_weights(i) > 0.0) {
+      bw_dist(positive_index) = endpoint_dist(i);
+      bw_weights(positive_index++) = endpoint_weights(i);
+    }
+  }
   const Eigen::Index n_bw = std::min<Eigen::Index>(
     bw_dist.size(),
     std::max<Eigen::Index>(
       4, static_cast<Eigen::Index>(std::ceil(bw_fraction * bw_dist.size()))));
-  bandwidth::PluginBandwidthSelector selector(bw_dist.head(n_bw));
+  bandwidth::PluginBandwidthSelector selector(bw_dist.head(n_bw),
+                                              bw_weights.head(n_bw));
   const double h = selector.select_bandwidth(2) * multiplier_;
 
   auto fit_endpoint = [&](const Eigen::VectorXd& dist,
-                          const Eigen::VectorXd& eval_dist) {
-    Eigen::VectorXd dist_sorted = dist;
-    std::sort(dist_sorted.data(), dist_sorted.data() + dist_sorted.size());
-    return fit_boundary_component(dist_sorted, eval_dist, h);
+                          const Eigen::VectorXd& eval_dist,
+                          const Eigen::VectorXd& endpoint_weights) {
+    return fit_boundary_component(dist, eval_dist, h, endpoint_weights);
   };
 
   BoundaryComponent lower;
@@ -1180,13 +1243,14 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
   repair_lower = repair_lower && n_lower > 0;
   repair_upper = repair_upper && n_upper > 0;
   if (repair_lower) {
-    lower = fit_endpoint(dist_lower, grid.head(n_lower).array() - xmin_);
+    lower = fit_endpoint(
+      dist_lower, grid.head(n_lower).array() - xmin_, weights_lower);
     repair_lower = lower.density.size() > 0;
   }
   if (repair_upper) {
     Eigen::VectorXd upper_eval_dist =
       (xmax_ - grid.tail(n_upper).array()).reverse();
-    upper = fit_endpoint(dist_upper, upper_eval_dist);
+    upper = fit_endpoint(dist_upper, upper_eval_dist, weights_upper);
     repair_upper = upper.density.size() > 0;
   }
   if (!repair_lower && !repair_upper)
