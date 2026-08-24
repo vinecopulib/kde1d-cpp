@@ -141,7 +141,7 @@ private:
   double loglik_{ NAN };
   double edf_{ NAN };
   // Regularizes one-sided log transforms in the units of the fitted data.
-  double boundary_offset_{ 1e-5 };
+  double boundary_offset_{ NAN };
   static constexpr double K0_ = 0.3989425;
 
   // private methods
