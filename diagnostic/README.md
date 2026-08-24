@@ -33,3 +33,6 @@ to zero.
 The separate transformation-boundary investigation, its retained simulation
 results, and its current recommendations live in
 [`boundary-repair/`](boundary-repair/README.md).
+
+The follow-up for supports with exactly one finite endpoint lives in
+[`one-sided-repair/`](one-sided-repair/README.md).
