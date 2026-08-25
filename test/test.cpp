@@ -47,6 +47,33 @@ TEST_CASE("right extrapolation is continuous", "[interpolation]")
         Approx(3.0 * std::exp(-0.5)));
 }
 
+TEST_CASE("spline quantiles invert nonuniform cumulative integrals",
+          "[interpolation][quantile]")
+{
+  Eigen::VectorXd grid_points(6);
+  grid_points << -2.0, -0.7, -0.1, 0.2, 0.9, 1.5;
+  Eigen::VectorXd values(6);
+  values << 0.05, 0.4, 1.2, 0.8, 0.3, 0.02;
+  interp::InterpolationGrid grid(grid_points, values, 1);
+
+  Eigen::VectorXd probabilities(10);
+  probabilities << 0.75, 1e-10, 0.25, 0.5, 1.0 - 1e-10, 0.25, 0.0, 1.0,
+    0.9, 0.1;
+  Eigen::VectorXd quantiles = grid.quantile(probabilities);
+  Eigen::VectorXd reference = tools::invert_f(
+    probabilities,
+    [&](const Eigen::VectorXd& x) { return grid.integrate(x, true); },
+    grid.get_grid_min(),
+    grid.get_grid_max(),
+    50);
+
+  CHECK(quantiles.isApprox(reference, 1e-10));
+  CHECK(grid.integrate(quantiles, true).isApprox(probabilities, 1e-12));
+  CHECK(quantiles(2) == quantiles(5));
+  CHECK(quantiles(6) == grid.get_grid_min());
+  CHECK(quantiles(7) == grid.get_grid_max());
+}
+
 TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.2, 0.8);
@@ -107,6 +134,70 @@ TEST_CASE("finite support truncates density", "[finite-support]")
   CHECK(density(1) > 0.0);
   CHECK(density(2) > 0.0);
   CHECK(density(3) == 0.0);
+}
+
+TEST_CASE("continuous quantiles invert the normalized CDF", "[quantile]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.0, 1.0);
+  Kde1d fit(0.0, 1.0, "continuous", 1.0, 0.1, 2, 400);
+  fit.fit(observations);
+
+  Eigen::VectorXd probabilities(12);
+  probabilities << 0.0,
+    1e-12,
+    1e-8,
+    1e-4,
+    0.1,
+    0.5,
+    0.5,
+    0.9,
+    1.0 - 1e-4,
+    1.0 - 1e-8,
+    1.0 - 1e-12,
+    1.0;
+  Eigen::VectorXd quantiles = fit.quantile(probabilities);
+  Eigen::VectorXd round_trip = fit.cdf(quantiles);
+  CAPTURE(probabilities.transpose(),
+          quantiles.transpose(),
+          round_trip.transpose());
+
+  CHECK((quantiles.tail(quantiles.size() - 1) -
+         quantiles.head(quantiles.size() - 1))
+          .minCoeff() >= 0.0);
+  CHECK(quantiles(5) == quantiles(6));
+  CHECK((round_trip - probabilities).cwiseAbs().maxCoeff() < 1e-8);
+  CHECK(quantiles(0) >= 0.0);
+  CHECK(quantiles(quantiles.size() - 1) <= 1.0);
+
+  Eigen::VectorXd shuffled(7);
+  shuffled << 0.9, NAN, 0.1, 0.9, 0.5, 0.1, NAN;
+  quantiles = fit.quantile(shuffled);
+  CHECK(std::isnan(quantiles(1)));
+  CHECK(std::isnan(quantiles(6)));
+  CHECK(quantiles(0) == quantiles(3));
+  CHECK(quantiles(2) == quantiles(5));
+}
+
+TEST_CASE("discrete quantiles satisfy the generalized inverse", "[quantile]")
+{
+  Eigen::VectorXd observations(10);
+  observations << 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0;
+  Kde1d fit(0.0, 3.0, "discrete", 1.0, 0.5, 2, 100);
+  fit.fit(observations);
+
+  Eigen::VectorXd probabilities(9);
+  probabilities << 0.0, 1e-12, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0 - 1e-12, 1.0;
+  Eigen::VectorXd quantiles = fit.quantile(probabilities);
+  Eigen::VectorXd cumulative = fit.cdf(quantiles);
+
+  CHECK((quantiles.array() == quantiles.array().round()).all());
+  CHECK((quantiles.tail(quantiles.size() - 1) -
+         quantiles.head(quantiles.size() - 1))
+          .minCoeff() >= 0.0);
+  CHECK((cumulative.array() + 1e-14 >= probabilities.array()).all());
+
+  Eigen::VectorXd levels = Eigen::VectorXd::LinSpaced(4, 0.0, 3.0);
+  CHECK(fit.quantile(fit.cdf(levels)).isApprox(levels));
 }
 
 TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")

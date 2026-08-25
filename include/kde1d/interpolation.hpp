@@ -2,6 +2,7 @@
 
 #include "tools.hpp"
 #include <Eigen/Dense>
+#include <algorithm>
 #include <vector>
 
 namespace kde1d {
@@ -28,6 +29,8 @@ public:
   Eigen::VectorXd integrate(const Eigen::VectorXd& u,
                             bool normalize = false) const;
 
+  Eigen::VectorXd quantile(const Eigen::VectorXd& probabilities) const;
+
   Eigen::VectorXd get_values() const { return values_; }
   Eigen::VectorXd get_grid_points() const { return grid_points_; }
   double get_grid_max() const { return grid_points_[grid_points_.size() - 1]; }
@@ -40,6 +43,7 @@ private:
   double cubic_integral(const double& lower,
                         const double& upper,
                         const Eigen::Vector4d& a) const;
+  double invert_integral(double probability, double total_mass) const;
   size_t binary_search(const double& x) const;
   size_t find_cell(const double& x) const;
   Eigen::Vector4d find_cell_coefs(const size_t& k) const;
@@ -144,6 +148,22 @@ InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
                    : res;
 }
 
+//! Invert the normalized integral of the interpolation spline.
+//!
+//! @param probabilities vector of probabilities in the unit interval.
+inline Eigen::VectorXd
+InterpolationGrid::quantile(const Eigen::VectorXd& probabilities) const
+{
+  const double total_mass =
+    cumulative_integrals_(cumulative_integrals_.size() - 1);
+  if (!(total_mass > 0.0))
+    throw std::runtime_error("cannot invert a spline with non-positive mass");
+
+  return tools::unaryExpr_or_nan(probabilities, [&](const double probability) {
+    return invert_integral(probability, total_mass);
+  });
+}
+
 // ---------------- Utility functions for spline interpolation ----------------
 
 //! Evaluate a cubic polynomial
@@ -183,6 +203,67 @@ InterpolationGrid::cubic_integral(const double& lower,
                                   const Eigen::Vector4d& a) const
 {
   return cubic_indef_integral(upper, a) - cubic_indef_integral(lower, a);
+}
+
+inline double
+InterpolationGrid::invert_integral(double probability, double total_mass) const
+{
+  if (probability <= 0.0)
+    return grid_points_(0);
+  if (probability >= 1.0)
+    return grid_points_(grid_points_.size() - 1);
+
+  const double target_mass = probability * total_mass;
+
+  // Locate the spline cell containing the requested cumulative mass.
+  const double* upper_mass =
+    std::lower_bound(cumulative_integrals_.data() + 1,
+                     cumulative_integrals_.data() +
+                       cumulative_integrals_.size(),
+                     target_mass);
+  const Eigen::Index cell = std::min(
+    static_cast<Eigen::Index>(upper_mass - cumulative_integrals_.data() - 1),
+    grid_points_.size() - 2);
+  const double cell_width = grid_points_(cell + 1) - grid_points_(cell);
+  const double cell_mass =
+    cumulative_integrals_(cell + 1) - cumulative_integrals_(cell);
+  if (!(cell_mass > 0.0))
+    return grid_points_(cell + 1);
+
+  // Linear interpolation of cell mass is a cheap initial estimate.
+  double position = std::clamp(
+    (target_mass - cumulative_integrals_(cell)) / cell_mass, 0.0, 1.0);
+  double lower_position = 0.0;
+  double upper_position = 1.0;
+  const Eigen::Vector4d coefficients = cell_coefs_.col(cell);
+
+  for (int iteration = 0; iteration < 35; ++iteration) {
+    const double residual =
+      cubic_indef_integral(position, coefficients) * cell_width -
+      (target_mass - cumulative_integrals_(cell));
+    if (std::abs(residual) <=
+        8.0 * std::numeric_limits<double>::epsilon() * total_mass)
+      break;
+
+    if (residual < 0.0)
+      lower_position = position;
+    else
+      upper_position = position;
+
+    // Keep Newton steps inside the bracket; bisect when the density is flat.
+    const double derivative = cubic_poly(position, coefficients) * cell_width;
+    const double newton_position = derivative > 0.0
+                                     ? position - residual / derivative
+                                     : lower_position;
+    if ((derivative > 0.0) && (newton_position > lower_position) &&
+        (newton_position < upper_position)) {
+      position = newton_position;
+    } else {
+      position = 0.5 * (lower_position + upper_position);
+    }
+  }
+
+  return grid_points_(cell) + position * cell_width;
 }
 
 inline size_t
