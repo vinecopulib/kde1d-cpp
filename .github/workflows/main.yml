@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -97,11 +96,11 @@ jobs:
           mkdir release && cd release
           if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
             cmake .. -DCMAKE_BUILD_TYPE=Release && make && sudo make install
-            bin/test
+            ctest --output-on-failure
           else
             cmake .. -A "${CMAKE_GEN_PLAT}" -DCMAKE_BUILD_TYPE=Release
             cmake --build . --config Release
-            "bin/Release/test.exe"
+            ctest -C Release --output-on-failure
             cmake --build . --config Release --target install
           fi
         shell: bash

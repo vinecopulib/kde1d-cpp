@@ -35,7 +35,7 @@ The unix one liner (from the root folder):
 
 ```
 mkdir build && cd build && cmake .. && make && make doc &&
-sudo make install && bin/test
+sudo make install && ctest --output-on-failure
 ```
 
 | Step | Shell command  |
