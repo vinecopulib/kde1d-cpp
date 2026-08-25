@@ -476,14 +476,37 @@ TEST_CASE("discrete bounds describe integer support", "[discrete][boundary]")
   CHECK((right_grid.tail(right_grid.size() - 1) -
          right_grid.head(right_grid.size() - 1))
           .minCoeff() > 0.0);
-  CHECK(right_bounded.pdf(levels).sum() == Approx(1.0));
-  CHECK(right_bounded.pdf(Eigen::VectorXd::Constant(1, -1.0))(0) == 0.0);
+  const double right_lower = std::floor(right_grid(0));
+  const Eigen::VectorXd right_levels = Eigen::VectorXd::LinSpaced(
+    static_cast<size_t>(3.0 - right_lower + 1.0), right_lower, 3.0);
+  CHECK(right_bounded.pdf(right_levels).sum() == Approx(1.0));
+  CHECK(right_bounded.pdf(Eigen::VectorXd::Constant(1, 4.0))(0) == 0.0);
 
   Kde1d unbounded(NAN, NAN, "discrete");
   unbounded.fit(observations);
-  CHECK(unbounded.pdf(Eigen::VectorXd::Constant(1, -1.0))(0) == 0.0);
-  CHECK(unbounded.cdf(Eigen::VectorXd::Constant(1, -0.1))(0) == 0.0);
-  CHECK(unbounded.quantile(Eigen::VectorXd::Constant(1, 0.0))(0) == 0.0);
+  const Eigen::VectorXd unbounded_grid = unbounded.get_grid_points();
+  const double unbounded_lower = std::floor(unbounded_grid(0));
+  const double unbounded_upper =
+    std::ceil(unbounded_grid(unbounded_grid.size() - 1));
+  const Eigen::VectorXd unbounded_levels = Eigen::VectorXd::LinSpaced(
+    static_cast<size_t>(unbounded_upper - unbounded_lower + 1.0),
+    unbounded_lower,
+    unbounded_upper);
+  CHECK(unbounded.pdf(unbounded_levels).sum() == Approx(1.0));
+  CHECK(unbounded.quantile(Eigen::VectorXd::Constant(1, 0.0))(0) ==
+        unbounded_lower);
+
+  const Eigen::VectorXd signed_observations = observations.array() - 2.0;
+  Kde1d signed_bounded(-2.0, 1.0, "discrete", 1.0, NAN, 2, 100);
+  signed_bounded.fit(signed_observations);
+  const Eigen::VectorXd signed_grid = signed_bounded.get_grid_points();
+  CHECK(signed_grid(0) == Approx(-2.5));
+  CHECK(signed_grid(signed_grid.size() - 1) == Approx(1.5));
+  const Eigen::VectorXd signed_levels =
+    Eigen::VectorXd::LinSpaced(4, -2.0, 1.0);
+  CHECK(signed_bounded.pdf(signed_levels).sum() == Approx(1.0));
+  CHECK(signed_bounded.pdf(Eigen::VectorXd::Constant(1, -3.0))(0) == 0.0);
+  CHECK(signed_bounded.pdf(Eigen::VectorXd::Constant(1, 2.0))(0) == 0.0);
 
   Kde1d singleton(0.0, 0.0, "discrete");
   singleton.fit(Eigen::VectorXd::Zero(40));
@@ -510,16 +533,13 @@ TEST_CASE("bounded discrete fits use adaptive boundary experts",
   CHECK(repaired.get_values().minCoeff() >= 0.0);
 }
 
-TEST_CASE("discrete inputs are nonnegative integers", "[discrete][input-checks]")
+TEST_CASE("discrete inputs are integers", "[discrete][input-checks]")
 {
-  CHECK_THROWS(Kde1d(-1.0, NAN, "discrete"));
+  CHECK_NOTHROW(Kde1d(-3.0, -1.0, "discrete"));
   CHECK_THROWS(Kde1d(0.5, NAN, "discrete"));
   CHECK_THROWS(Kde1d(NAN, 3.5, "discrete"));
 
   Kde1d fit(NAN, NAN, "discrete");
-  Eigen::VectorXd negative(2);
-  negative << 0.0, -1.0;
-  CHECK_THROWS(fit.fit(negative));
   Eigen::VectorXd fractional(2);
   fractional << 0.0, 1.5;
   CHECK_THROWS(fit.fit(fractional));

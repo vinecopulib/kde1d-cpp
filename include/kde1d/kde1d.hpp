@@ -1452,12 +1452,10 @@ Kde1d::check_xmin_xmax(const double& xmin, const double& xmax) const
   if (type_ == VarType::discrete) {
     const auto invalid_bound = [](double bound) {
       return !std::isnan(bound) &&
-             (!std::isfinite(bound) || bound < 0.0 ||
-              bound != std::floor(bound));
+             (!std::isfinite(bound) || bound != std::floor(bound));
     };
     if (invalid_bound(xmin) || invalid_bound(xmax))
-      throw std::invalid_argument(
-        "discrete bounds must be nonnegative integers");
+      throw std::invalid_argument("discrete bounds must be integers");
   }
 }
 
@@ -1469,10 +1467,8 @@ Kde1d::check_discrete_data(const Eigen::VectorXd& x) const
 
   for (Eigen::Index i = 0; i < x.size(); ++i) {
     if (!std::isnan(x(i)) &&
-        (!std::isfinite(x(i)) || x(i) < 0.0 ||
-         x(i) != std::floor(x(i)))) {
-      throw std::invalid_argument(
-        "discrete data must be nonnegative integers");
+        (!std::isfinite(x(i)) || x(i) != std::floor(x(i)))) {
+      throw std::invalid_argument("discrete data must be integers");
     }
   }
 }
@@ -1496,7 +1492,7 @@ Kde1d::get_effective_xmax() const
 inline double
 Kde1d::get_discrete_support_min() const
 {
-  return std::isnan(xmin_) ? 0.0 : xmin_;
+  return std::isnan(xmin_) ? std::floor(grid_.get_grid_min()) : xmin_;
 }
 
 inline double

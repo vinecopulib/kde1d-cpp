@@ -1,9 +1,9 @@
 /** @page overview-discrete Discrete Distributions
 
-Discrete fits model nonnegative integer-valued observations. Both the data and
-any finite `xmin` or `xmax` must therefore be nonnegative integers. A finite
-bound describes the support of the discrete variable itself; probabilities
-outside those integer bounds are zero.
+Discrete fits model integer-valued observations, including negative integers.
+Any finite `xmin` or `xmax` must also be an integer. A finite bound describes
+the support of the discrete variable itself; probabilities outside those
+integer bounds are zero.
 
 @section discrete-jitter Jittering and support transforms
 
@@ -37,10 +37,10 @@ levels:
 \qquad k\in\mathcal S.
 @f]
 
-Here @f$\mathcal S@f$ is the nonnegative integer support, restricted by any
-finite public bounds. Noninteger arguments and integer values outside this
-support have probability zero. The CDF and quantile function use the same
-normalized masses.
+Here @f$\mathcal S@f$ is the integer support inferred from the interpolation
+grid and restricted by any finite public bounds. Noninteger arguments and
+integer values outside this support have probability zero. The CDF and
+quantile function use the same normalized masses.
 
 This distinction also explains why an unconstrained jitter density can give a
 good discrete estimate despite having a nonzero continuous integral outside
