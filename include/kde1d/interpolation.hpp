@@ -2,6 +2,7 @@
 
 #include "tools.hpp"
 #include <Eigen/Dense>
+#include <vector>
 
 namespace kde1d {
 
@@ -34,16 +35,23 @@ public:
 
 private:
   // Utility functions for spline Interpolation
-  double cubic_poly(const double& x, const Eigen::VectorXd& a) const;
-  double cubic_indef_integral(const double& x, const Eigen::VectorXd& a) const;
+  double cubic_poly(const double& x, const Eigen::Vector4d& a) const;
+  double cubic_indef_integral(const double& x, const Eigen::Vector4d& a) const;
   double cubic_integral(const double& lower,
                         const double& upper,
-                        const Eigen::VectorXd& a) const;
-  size_t find_cell(const double& x0) const;
-  Eigen::VectorXd find_cell_coefs(const size_t& k) const;
+                        const Eigen::Vector4d& a) const;
+  size_t binary_search(const double& x) const;
+  size_t find_cell(const double& x) const;
+  Eigen::Vector4d find_cell_coefs(const size_t& k) const;
+  void update_cell_coefs();
+  void update_cumulative_integrals();
+  void update_cell_lookup();
 
   Eigen::VectorXd grid_points_;
   Eigen::VectorXd values_;
+  Eigen::Matrix<double, 4, Eigen::Dynamic> cell_coefs_;
+  Eigen::VectorXd cumulative_integrals_;
+  std::vector<size_t> cell_lookup_;
 };
 
 //! Constructor
@@ -62,6 +70,7 @@ inline InterpolationGrid::InterpolationGrid(const Eigen::VectorXd& grid_points,
   grid_points_ = grid_points;
   values_ = values;
   this->normalize(norm_times);
+  update_cell_lookup();
 }
 
 //! renormalizes the estimate to integrate to one
@@ -70,12 +79,16 @@ inline InterpolationGrid::InterpolationGrid(const Eigen::VectorXd& grid_points,
 inline void
 InterpolationGrid::normalize(int times)
 {
-  double x_max = grid_points_(grid_points_.size() - 1);
-  double int_max;
   for (int k = 0; k < times; ++k) {
-    int_max = this->integrate(Eigen::VectorXd::Constant(1, x_max))(0);
-    values_ /= int_max;
+    double integral = 0.0;
+    for (Eigen::Index cell = 0; cell < grid_points_.size() - 1; ++cell) {
+      integral += cubic_integral(0.0, 1.0, find_cell_coefs(cell)) *
+                  (grid_points_(cell + 1) - grid_points_(cell));
+    }
+    values_ /= integral;
   }
+  update_cell_coefs();
+  update_cumulative_integrals();
 }
 
 //! Interpolation
@@ -83,7 +96,6 @@ InterpolationGrid::normalize(int times)
 inline Eigen::VectorXd
 InterpolationGrid::interpolate(const Eigen::VectorXd& x) const
 {
-  Eigen::VectorXd tmp_coefs(4);
   auto interpolate_one = [&](const double& xx) {
     size_t k = find_cell(xx);
     double xev =
@@ -96,7 +108,7 @@ InterpolationGrid::interpolate(const Eigen::VectorXd& x) const
       return values_(k + 1) * std::exp(-0.5 * (xev - 1) * (xev - 1));
     }
 
-    return cubic_poly(xev, find_cell_coefs(k));
+    return cubic_poly(xev, Eigen::Vector4d(cell_coefs_.col(k)));
   };
 
   return tools::unaryExpr_or_nan(x, interpolate_one);
@@ -110,63 +122,26 @@ inline Eigen::VectorXd
 InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
 {
   Eigen::VectorXd res(x.size());
-  auto ord = tools::get_order(x);
-
-  // temporaries for the loop
-  Eigen::VectorXd tmp_coefs(4);
-  double new_int, tmp_eps, cum_int = 0.0;
-  size_t k = 0, m = grid_points_.size();
-  tmp_coefs = find_cell_coefs(0);
-  tmp_eps = (grid_points_(1) - grid_points_(0));
-
-  for (long i = 0; i < x.size(); ++i) {
-    double upr = x(ord(i));
-
-    if (std::isnan(upr)) {
-      res(ord(i)) = upr;
-      continue;
-    }
-    if (upr <= grid_points_(0)) {
-      res(ord(i)) = 0.0;
-      continue;
-    }
-
-    // go up the grid and integrate
-    while (k < m - 1) {
-      // halt loop if integration limit is in kth cell
-      if (upr < grid_points_(k + 1))
-        break;
-      // integrate over full cell
-      tmp_coefs = find_cell_coefs(k);
-      tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-      cum_int += cubic_integral(0.0, 1.0, tmp_coefs) * tmp_eps;
-      k++;
-    }
-
-    // integrate over partial cell
-    if (upr < grid_points_(m - 1)) { // only if still in interior
-      tmp_coefs = find_cell_coefs(k);
-      tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-      upr = (upr - grid_points_(k)) / tmp_eps;
-      new_int = cubic_integral(0.0, upr, tmp_coefs) * tmp_eps;
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (std::isnan(x(i))) {
+      res(i) = x(i);
+    } else if (x(i) <= grid_points_(0)) {
+      res(i) = 0.0;
+    } else if (x(i) >= grid_points_(grid_points_.size() - 1)) {
+      res(i) = cumulative_integrals_(grid_points_.size() - 1);
     } else {
-      new_int = 0.0;
+      const size_t cell = find_cell(x(i));
+      const double cell_width = grid_points_(cell + 1) - grid_points_(cell);
+      const double position = (x(i) - grid_points_(cell)) / cell_width;
+      res(i) = cumulative_integrals_(cell) +
+               cubic_integral(
+                 0.0, position, Eigen::Vector4d(cell_coefs_.col(cell))) *
+                 cell_width;
     }
-
-    res(ord(i)) = cum_int + new_int;
   }
 
-  if (!normalize)
-    return res;
-
-  // integrate until end
-  while (k < m - 1) {
-    tmp_coefs = find_cell_coefs(k);
-    tmp_eps = (grid_points_(k + 1) - grid_points_(k));
-    cum_int += cubic_integral(0.0, 1.0, tmp_coefs) * tmp_eps;
-    k++;
-  }
-  return res / cum_int;
+  return normalize ? res / cumulative_integrals_(grid_points_.size() - 1)
+                   : res;
 }
 
 // ---------------- Utility functions for spline interpolation ----------------
@@ -176,7 +151,7 @@ InterpolationGrid::integrate(const Eigen::VectorXd& x, bool normalize) const
 //! @param x evaluation point.
 //! @param a polynomial coefficients
 inline double
-InterpolationGrid::cubic_poly(const double& x, const Eigen::VectorXd& a) const
+InterpolationGrid::cubic_poly(const double& x, const Eigen::Vector4d& a) const
 {
   double x2 = x * x;
   double x3 = x2 * x;
@@ -189,7 +164,7 @@ InterpolationGrid::cubic_poly(const double& x, const Eigen::VectorXd& a) const
 //! @param a polynomial coefficients.
 inline double
 InterpolationGrid::cubic_indef_integral(const double& x,
-                                        const Eigen::VectorXd& a) const
+                                        const Eigen::Vector4d& a) const
 {
   double x2 = x * x;
   double x3 = x2 * x;
@@ -205,19 +180,19 @@ InterpolationGrid::cubic_indef_integral(const double& x,
 inline double
 InterpolationGrid::cubic_integral(const double& lower,
                                   const double& upper,
-                                  const Eigen::VectorXd& a) const
+                                  const Eigen::Vector4d& a) const
 {
   return cubic_indef_integral(upper, a) - cubic_indef_integral(lower, a);
 }
 
 inline size_t
-InterpolationGrid::find_cell(const double& x0) const
+InterpolationGrid::binary_search(const double& x) const
 {
   size_t low = 0, high = grid_points_.size() - 1;
   size_t mid;
   while (low < high - 1) {
     mid = low + (high - low) / 2;
-    if (x0 < grid_points_(mid))
+    if (x < grid_points_(mid))
       high = mid;
     else
       low = mid;
@@ -226,10 +201,30 @@ InterpolationGrid::find_cell(const double& x0) const
   return low;
 }
 
+inline size_t
+InterpolationGrid::find_cell(const double& x) const
+{
+  const double relative_position =
+    (x - grid_points_(0)) /
+    (grid_points_(grid_points_.size() - 1) - grid_points_(0));
+  const double bounded_position =
+    std::min(std::max(relative_position, 0.0), 1.0);
+  const size_t bucket = std::min(
+    static_cast<size_t>(bounded_position *
+                        static_cast<double>(cell_lookup_.size())),
+    cell_lookup_.size() - 1);
+  size_t cell = cell_lookup_[bucket];
+  while ((cell < static_cast<size_t>(grid_points_.size() - 2)) &&
+         (grid_points_(cell + 1) <= x)) {
+    ++cell;
+  }
+  return cell;
+}
+
 //! Calculate coefficients for cubic intrpolation spline
 //!
 //! @param k the cell index.
-inline Eigen::VectorXd
+inline Eigen::Vector4d
 InterpolationGrid::find_cell_coefs(const size_t& k) const
 {
   // indices for cell and neighboring grid points
@@ -266,13 +261,47 @@ InterpolationGrid::find_cell_coefs(const size_t& k) const
   dx2 = std::min(dx2, 3 * values_(k2));
 
   // compute coefficents
-  Eigen::VectorXd a(4);
+  Eigen::Vector4d a;
   a(0) = values_(k);
   a(1) = dx1;
   a(2) = -3 * (values_(k) - values_(k2)) - 2 * dx1 - dx2;
   a(3) = 2 * (values_(k) - values_(k2)) + dx1 + dx2;
 
   return a;
+}
+
+inline void
+InterpolationGrid::update_cell_coefs()
+{
+  cell_coefs_.resize(4, grid_points_.size() - 1);
+  for (Eigen::Index k = 0; k < grid_points_.size() - 1; ++k)
+    cell_coefs_.col(k) = find_cell_coefs(k);
+}
+
+inline void
+InterpolationGrid::update_cumulative_integrals()
+{
+  cumulative_integrals_ = Eigen::VectorXd::Zero(grid_points_.size());
+  for (Eigen::Index cell = 0; cell < grid_points_.size() - 1; ++cell) {
+    cumulative_integrals_(cell + 1) =
+      cumulative_integrals_(cell) +
+      cubic_integral(
+        0.0, 1.0, Eigen::Vector4d(cell_coefs_.col(cell))) *
+        (grid_points_(cell + 1) - grid_points_(cell));
+  }
+}
+
+inline void
+InterpolationGrid::update_cell_lookup()
+{
+  cell_lookup_.resize(128);
+  const double grid_range =
+    grid_points_(grid_points_.size() - 1) - grid_points_(0);
+  for (size_t bucket = 0; bucket < cell_lookup_.size(); ++bucket) {
+    cell_lookup_[bucket] = binary_search(
+      grid_points_(0) + grid_range * static_cast<double>(bucket) /
+                          static_cast<double>(cell_lookup_.size()));
+  }
 }
 
 } // end kde1d::interp
