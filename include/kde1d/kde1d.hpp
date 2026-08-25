@@ -363,7 +363,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // correct estimated density for transformation
   Eigen::VectorXd values = boundary_correct(grid_points, fitted.col(0));
 
-  // move boundary points to xmin/xmax
+  // order grid points from left to right
   grid_points = finalize_grid(grid_points);
 
   // construct interpolation grid
@@ -389,9 +389,11 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   }
 
   // calculate effective degrees of freedom
-  interp::InterpolationGrid infl_grid(
-      grid_points, fitted.col(1).cwiseMin(3.0).cwiseMax(0), 0);
-  Eigen::VectorXd influences = infl_grid.interpolate(xx).array();
+  Eigen::VectorXd influences = fitted.col(1).cwiseMin(3.0).cwiseMax(0);
+  if (std::isnan(xmin_) && !std::isnan(xmax_))
+    influences.reverseInPlace();
+  interp::InterpolationGrid infl_grid(grid_points, influences, 0);
+  influences = infl_grid.interpolate(xx).array();
   edf_ = influences.sum() + static_cast<double>(prob0_ > 0);
 
   // store bandwidth in standardized format
@@ -425,7 +427,12 @@ Kde1d::pdf_continuous(const Eigen::VectorXd& x) const
 {
   Eigen::VectorXd fhat = grid_.interpolate(x);
   auto trunc = [](const double& xx) { return std::max(xx, 0.0); };
-  return tools::unaryExpr_or_nan(fhat, trunc);
+  fhat = tools::unaryExpr_or_nan(fhat, trunc);
+  if (!std::isnan(xmin_))
+    fhat = (x.array() < xmin_).select(0.0, fhat);
+  if (!std::isnan(xmax_))
+    fhat = (x.array() > xmax_).select(0.0, fhat);
+  return fhat;
 }
 
 inline Eigen::VectorXd
@@ -502,7 +509,8 @@ Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
     } else if (xx >= ub) {
       return 1.0;
     } else {
-      return f_cum(static_cast<size_t>(xx - lb));
+      return std::min(
+        1.0, std::max(0.0, f_cum(static_cast<size_t>(xx - lb))));
     };
   });
 }
@@ -640,6 +648,8 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
     x, bandwidth_, grid_points(0), grid_points(m - 1), weights, m - 1);
   Eigen::VectorXd f0 = kde_fft.kde_drv(0);
   Eigen::VectorXd f1(f0.size()), f2(f0.size());
+  const double density_floor =
+    std::numeric_limits<double>::epsilon() * f0.cwiseAbs().maxCoeff();
 
   Eigen::VectorXd wbin = Eigen::VectorXd::Ones(m);
   if (weights.size()) {
@@ -680,9 +690,13 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
   res.col(0) = res.col(0).array() * (-0.5 * b.array().pow(2) * S.array()).exp();
 
   for (size_t k = 0; k < m; k++) {
+    if (!std::isfinite(f0(k)) || f0(k) <= density_floor) {
+      res.row(k).setZero();
+      continue;
+    }
     res(k, 1) =
       calculate_infl(x.size(), f0(k), f1(k), f2(k), bandwidth_, S(k), wbin(k));
-    if (std::isnan(res(k, 0)))
+    if (!std::isfinite(res(k, 0)) || res(k, 0) < 0.0)
       res.row(k).setZero();
   }
 
@@ -822,25 +836,47 @@ Kde1d::construct_grid_points(const Eigen::VectorXd& x)
 {
   Eigen::VectorXd rng(2);
   rng << x.minCoeff(), x.maxCoeff();
-  if (std::isnan(xmin_) && std::isnan(xmax_)) {
+  if (type_ == VarType::discrete) {
+    // Discrete estimates use jittered observations without transformation.
+  } else if (std::isnan(xmin_) && std::isnan(xmax_)) {
     rng(0) -= 4 * bandwidth_;
+    rng(1) += 4 * bandwidth_;
+  } else if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
+    Eigen::VectorXd boundaries(2);
+    boundaries << xmin_, xmax_;
+    rng = boundary_transform(boundaries);
+  } else {
+    rng(0) = boundary_transform(Eigen::VectorXd::Constant(
+      1, std::isnan(xmin_) ? xmax_ : xmin_))(0);
     rng(1) += 4 * bandwidth_;
   }
   auto zgrid = Eigen::VectorXd::LinSpaced(grid_size_ + 1, rng(0), rng(1));
-  return boundary_transform(zgrid, true);
+  Eigen::VectorXd grid_points = boundary_transform(zgrid, true);
+
+  // Avoid round-off at finite support boundaries before evaluating the fit.
+  if (type_ != VarType::discrete) {
+    if (!std::isnan(xmin_))
+      grid_points(0) = xmin_;
+    if (!std::isnan(xmax_))
+      grid_points(std::isnan(xmin_) ? 0 : grid_size_) = xmax_;
+  }
+
+  return grid_points;
 }
 
-//! moves the boundary points of the grid to xmin/xmax (if non-NaN).
+//! orders grid points from left to right.
 //! @param grid_points the grid points.
 inline Eigen::VectorXd
 Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
 {
   if (std::isnan(xmin_) && !std::isnan(xmax_))
     grid_points.reverseInPlace();
-  if (!std::isnan(xmin_))
-    grid_points(0) = xmin_;
-  if (!std::isnan(xmax_))
-    grid_points(grid_points.size() - 1) = xmax_;
+  if (type_ == VarType::discrete) {
+    if (!std::isnan(xmin_))
+      grid_points(0) = xmin_;
+    if (!std::isnan(xmax_))
+      grid_points(grid_points.size() - 1) = xmax_;
+  }
 
   return grid_points;
 }

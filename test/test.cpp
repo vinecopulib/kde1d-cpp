@@ -22,6 +22,137 @@ size_t nlevels = 50;
 Eigen::VectorXd x_d =
   (x_cb.array() * (static_cast<double>(nlevels) - 1)).round();
 
+TEST_CASE("linear binning includes the upper endpoint", "[linear-binning]")
+{
+  Eigen::VectorXd observations(3);
+  observations << 0.0, 0.5, 1.0;
+  Eigen::VectorXd counts = tools::linbin(
+    observations, 0.0, 1.0, 2, Eigen::VectorXd::Ones(3));
+
+  CHECK(counts.isApprox(Eigen::VectorXd::Ones(3)));
+  CHECK(counts.sum() == Approx(3.0));
+}
+
+TEST_CASE("right extrapolation is continuous", "[interpolation]")
+{
+  Eigen::VectorXd grid_points(2);
+  grid_points << 0.0, 1.0;
+  Eigen::VectorXd values(2);
+  values << 2.0, 3.0;
+  interp::InterpolationGrid grid(grid_points, values, 0);
+
+  CHECK(grid.interpolate(Eigen::VectorXd::Constant(1, 1.0))(0) ==
+        Approx(3.0));
+  CHECK(grid.interpolate(Eigen::VectorXd::Constant(1, 2.0))(0) ==
+        Approx(3.0 * std::exp(-0.5)));
+}
+
+TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.2, 0.8);
+  Kde1d bounded(0.0, 1.0, "continuous", 1.0, 0.3);
+  bounded.fit(observations);
+  Eigen::VectorXd grid = bounded.get_grid_points();
+
+  CHECK(grid(0) == Approx(0.0));
+  CHECK(grid(grid.size() - 1) == Approx(1.0));
+  CHECK(grid(1) < observations.minCoeff());
+  CHECK(grid(grid.size() - 2) > observations.maxCoeff());
+  CHECK((grid.tail(grid.size() - 1) - grid.head(grid.size() - 1)).minCoeff() >
+        0.0);
+
+  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.3);
+  left_bounded.fit(observations);
+  grid = left_bounded.get_grid_points();
+  CHECK(grid(0) == Approx(0.0));
+  CHECK(grid(1) < observations.minCoeff());
+  CHECK(grid(grid.size() - 1) > observations.maxCoeff());
+
+  observations *= -1.0;
+  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.3);
+  right_bounded.fit(observations);
+  grid = right_bounded.get_grid_points();
+  CHECK(grid(0) < observations.minCoeff());
+  CHECK(grid(grid.size() - 2) > observations.maxCoeff());
+  CHECK(grid(grid.size() - 1) == Approx(0.0));
+}
+
+TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.01, 5.0);
+  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.5);
+  left_bounded.fit(observations);
+
+  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.5);
+  right_bounded.fit(-observations);
+
+  CHECK(left_bounded.get_grid_points().isApprox(
+    -right_bounded.get_grid_points().reverse()));
+  CHECK(left_bounded.get_values().isApprox(
+    right_bounded.get_values().reverse()));
+  CHECK(left_bounded.get_loglik() == Approx(right_bounded.get_loglik()));
+  CHECK(left_bounded.get_edf() == Approx(right_bounded.get_edf()));
+}
+
+TEST_CASE("finite support truncates density", "[finite-support]")
+{
+  Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(200, 0.0, 1.0);
+  Kde1d bounded(0.0, 1.0, "continuous", 1.0, 0.5);
+  bounded.fit(observations);
+
+  Eigen::VectorXd evaluation_points(4);
+  evaluation_points << -1e-8, 0.0, 1.0, 1.0 + 1e-8;
+  Eigen::VectorXd density = bounded.pdf(evaluation_points);
+  CHECK(density(0) == 0.0);
+  CHECK(density(1) > 0.0);
+  CHECK(density(2) > 0.0);
+  CHECK(density(3) == 0.0);
+}
+
+TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")
+{
+  Eigen::VectorXd grid_points = Eigen::VectorXd::LinSpaced(10, 0.0, 9.0);
+  Eigen::VectorXd values = Eigen::VectorXd::Ones(10);
+  values(9) = 0.0;
+  interp::InterpolationGrid grid(grid_points, values, 0);
+  Kde1d discrete(grid, NAN, NAN, "discrete");
+
+  CHECK(discrete.cdf(Eigen::VectorXd::Constant(1, 8.0))(0) == 1.0);
+}
+
+TEST_CASE("likelihood summaries match fitted densities", "[likelihood]")
+{
+  SECTION("weighted likelihood")
+  {
+    Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(100, -2.0, 2.0);
+    Eigen::VectorXd weights = Eigen::VectorXd::LinSpaced(100, 0.5, 1.5);
+    Kde1d weighted(NAN, NAN, "continuous", 1.0, 0.5);
+    weighted.fit(observations, weights);
+
+    double expected =
+      (weighted.pdf(observations).array().log() * weights.array() /
+       weights.mean())
+        .sum();
+    CHECK(weighted.get_loglik() == Approx(expected));
+  }
+
+  SECTION("zero-inflated likelihood")
+  {
+    Eigen::VectorXd observations(100);
+    observations.head(40).setZero();
+    observations.tail(60) = Eigen::VectorXd::LinSpaced(60, 0.01, 3.0);
+    Kde1d zero_inflated(0.0, NAN, "zero-inflated", 1.0, 0.5);
+    zero_inflated.fit(observations);
+
+    Eigen::VectorXd density = zero_inflated.pdf(observations);
+    REQUIRE(zero_inflated.get_values().array().isFinite().all());
+    REQUIRE(density.array().isFinite().all());
+    REQUIRE((density.array() > 0.0).all());
+    REQUIRE(std::isfinite(zero_inflated.get_loglik()));
+    CHECK(zero_inflated.get_loglik() == Approx(density.array().log().sum()));
+  }
+}
+
 TEST_CASE("grid_size parameter", "[grid-size]")
 {
   
