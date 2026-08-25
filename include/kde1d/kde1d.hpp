@@ -18,11 +18,11 @@ enum class VarType
 
 //! Local-polynomial density estimation in one dimension.
 //!
-//! Continuous and bounded discrete fits use a transformed local-likelihood
-//! estimate as their bulk component. When `boundary_repair` is enabled,
-//! finite support endpoints may additionally use a nonnegative local-linear
-//! boundary kernel. See
-//! @ref overview-continuous and @ref overview-discrete for the transforms,
+//! Continuous fits, bounded discrete fits, and the continuous component of
+//! zero-inflated fits use a transformed local-likelihood bulk estimator. When
+//! `boundary_repair` is enabled, finite support endpoints may additionally use
+//! a nonnegative local-linear boundary kernel.
+//! See @ref overview-continuous and @ref overview-discrete for the transforms,
 //! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
 class Kde1d
 {
@@ -448,9 +448,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   const double effective_xmin = get_effective_xmin();
   const double effective_xmax = get_effective_xmax();
   const bool use_boundary_repair =
-    boundary_repair_ &&
-    (type_ == VarType::continuous || type_ == VarType::discrete) &&
-    xx.size() >= 16 &&
+    boundary_repair_ && xx.size() >= 16 &&
     (!std::isnan(effective_xmin) || !std::isnan(effective_xmax));
   const Eigen::VectorXd boundary_observations =
     use_boundary_repair ? xx : Eigen::VectorXd();
@@ -1535,8 +1533,17 @@ Kde1d::check_inputs(const Eigen::VectorXd& x,
 inline void
 Kde1d::check_boundaries(const Eigen::VectorXd& x) const
 {
-  if ((x.array() < xmin_).any() || (x.array() > xmax_).any()) {
-    throw std::invalid_argument("x must be contained in [xmin, xmax].");
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (std::isnan(x(i)) ||
+        (type_ == VarType::zero_inflated && x(i) == 0.0))
+      continue;
+    if ((!std::isnan(xmin_) && x(i) < xmin_) ||
+        (!std::isnan(xmax_) && x(i) > xmax_)) {
+      const std::string subject =
+        type_ == VarType::zero_inflated ? "nonzero x" : "x";
+      throw std::invalid_argument(subject +
+                                  " must be contained in [xmin, xmax].");
+    }
   }
 }
 

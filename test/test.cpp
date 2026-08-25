@@ -1304,3 +1304,46 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
       fit.quantile(stats::simulate_uniform(100, { 5 })).cwiseEqual(0).all());
   }
 }
+
+TEST_CASE("zero-inflated bounds apply to the continuous component",
+          "[zero-inflated][boundary]")
+{
+  Eigen::VectorXd positive = Eigen::VectorXd::Zero(200);
+  positive.tail(160) = Eigen::VectorXd::LinSpaced(160, 1.01, 1.99);
+
+  Kde1d repaired(1.0, 2.0, "zero-inflated", 1.0, NAN, 2, 100, true);
+  CHECK_NOTHROW(repaired.fit(positive));
+  CHECK(repaired.get_prob0() == Approx(0.2));
+  CHECK(repaired.get_grid_points()(0) == Approx(1.0));
+  CHECK(repaired.get_grid_points()(repaired.get_actual_grid_size() - 1) ==
+        Approx(2.0));
+  CHECK(repaired.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(repaired.pdf(Eigen::VectorXd::Constant(1, 0.5))(0) == 0.0);
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, -0.1))(0) == 0.0);
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, 0.5))(0) == Approx(0.2));
+
+  Kde1d bulk(1.0, 2.0, "zero-inflated", 1.0, NAN, 2, 100, false);
+  bulk.fit(positive);
+  CHECK_FALSE(repaired.get_values().isApprox(bulk.get_values(), 1e-8));
+
+  Eigen::VectorXd negative = Eigen::VectorXd::Zero(200);
+  negative.tail(160) = Eigen::VectorXd::LinSpaced(160, -2.99, -2.01);
+  Kde1d negative_fit(-3.0, -2.0, "zero-inflated", 1.0, NAN, 2, 100);
+  CHECK_NOTHROW(negative_fit.fit(negative));
+  CHECK(negative_fit.get_grid_points()(0) == Approx(-3.0));
+  CHECK(negative_fit.get_grid_points()(negative_fit.get_actual_grid_size() -
+                                       1) == Approx(-2.0));
+  CHECK(negative_fit.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(negative_fit.pdf(Eigen::VectorXd::Constant(1, -1.5))(0) == 0.0);
+
+  Eigen::VectorXd invalid(3);
+  invalid << 0.0, 0.5, 1.5;
+  Kde1d invalid_fit(1.0, 2.0, "zero-inflated");
+  CHECK_THROWS(invalid_fit.fit(invalid));
+
+  Kde1d point_mass(1.0, 2.0, "zero-inflated");
+  CHECK_NOTHROW(point_mass.fit(Eigen::VectorXd::Zero(40)));
+  CHECK(point_mass.get_prob0() == 1.0);
+  CHECK(point_mass.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == 1.0);
+}
