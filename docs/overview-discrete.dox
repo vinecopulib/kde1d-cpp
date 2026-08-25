@@ -1,4 +1,62 @@
 /** @page overview-discrete Discrete Distributions
 
+Discrete fits model nonnegative integer-valued observations. Both the data and
+any finite `xmin` or `xmax` must therefore be nonnegative integers. A finite
+bound describes the support of the discrete variable itself; probabilities
+outside those integer bounds are zero.
+
+@section discrete-jitter Jittering and support transforms
+
+Before fitting, tied observations are spread deterministically within their
+unit cells by adding conditionally equidistant noise in @f$(-1/2,1/2)@f$.
+Consequently, if the discrete support has a finite lower endpoint @f$a@f$ or
+upper endpoint @f$b@f$, the continuous jitter support has the corresponding
+endpoint
+
+@f[
+a_J=a-1/2,
+\qquad
+b_J=b+1/2.
+@f]
+
+The local-likelihood bulk estimator applies the same support transforms
+described in @ref continuous-bulk to these jitter-adjusted endpoints. Thus
+`xmin=0`, for example, invokes a one-sided transformation at @f$-1/2@f$;
+finite `xmin` and `xmax` invoke a two-sided transformation over the full
+jitter cells. The public bounds remain unchanged and integer-valued.
+
+@section discrete-pmf From jitter density to probability mass
+
+The fitted interpolation grid represents a continuous jitter density, but the
+discrete probability mass function is formed only from its values at integer
+levels:
+
+@f[
+\widehat p(k)=
+\frac{\widehat f_J(k)}{\sum_{j\in\mathcal S}\widehat f_J(j)},
+\qquad k\in\mathcal S.
+@f]
+
+Here @f$\mathcal S@f$ is the nonnegative integer support, restricted by any
+finite public bounds. Noninteger arguments and integer values outside this
+support have probability zero. The CDF and quantile function use the same
+normalized masses.
+
+This distinction also explains why an unconstrained jitter density can give a
+good discrete estimate despite having a nonzero continuous integral outside
+the integer support: that integral is not assigned to any discrete level.
+Only the density ordinates at integer centers enter the PMF. Supplying bounds
+uses the known support during fitting and prevents the transformed bulk from
+extrapolating through the ends of the boundary cells.
+
+@section discrete-repair Adaptive boundary repair
+
+When `boundary_repair=true`, each supplied discrete endpoint is eligible for
+the adaptive boundary expert described in @ref continuous-repair and
+@ref continuous-fusion. Classification and repair operate on the jittered
+observations and the half-unit endpoint. The expert is not forced: an endpoint
+whose local behavior appears vanishing, exploding, or ambiguous retains the
+transformed bulk estimate. This guards finite-looking boundary cells without
+replacing a stable bulk tail based only on the existence of a support bound.
 
 */

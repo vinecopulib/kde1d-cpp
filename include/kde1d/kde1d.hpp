@@ -18,10 +18,11 @@ enum class VarType
 
 //! Local-polynomial density estimation in one dimension.
 //!
-//! Continuous fits use a transformed local-likelihood estimate as their bulk
-//! component. When `boundary_repair` is enabled, finite support endpoints may
-//! additionally use a nonnegative local-linear boundary kernel. See
-//! @ref overview-continuous for the transforms,
+//! Continuous and bounded discrete fits use a transformed local-likelihood
+//! estimate as their bulk component. When `boundary_repair` is enabled,
+//! finite support endpoints may additionally use a nonnegative local-linear
+//! boundary kernel. See
+//! @ref overview-continuous and @ref overview-discrete for the transforms,
 //! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
 class Kde1d
 {
@@ -200,6 +201,11 @@ private:
   void check_inputs(const Eigen::VectorXd& x,
                     const Eigen::VectorXd& weights = Eigen::VectorXd()) const;
   void check_boundaries(const Eigen::VectorXd& x) const;
+  void check_discrete_data(const Eigen::VectorXd& x) const;
+  double get_effective_xmin() const;
+  double get_effective_xmax() const;
+  double get_discrete_support_min() const;
+  double get_discrete_support_max() const;
   Eigen::VectorXd pdf_continuous(const Eigen::VectorXd& x) const;
   Eigen::VectorXd cdf_continuous(const Eigen::VectorXd& x) const;
   Eigen::VectorXd quantile_continuous(const Eigen::VectorXd& x) const;
@@ -405,20 +411,13 @@ inline void
 Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
   check_inputs(x, weights);
+  check_discrete_data(x);
   check_boundaries(x);
 
   // preprocessing for nans and jittering
   Eigen::VectorXd xx = x;
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
-
-  const bool use_boundary_repair = boundary_repair_ &&
-                                   type_ == VarType::continuous &&
-                                   xx.size() >= 16 &&
-                                   (!std::isnan(xmin_) || !std::isnan(xmax_));
-  Eigen::VectorXd boundary_observations;
-  if (use_boundary_repair)
-    boundary_observations = xx;
 
   if (w.size() > 0) {
     w /= w.mean();
@@ -446,15 +445,24 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
     xx = stats::equi_jitter(xx);
   }
 
-  if (type_ != VarType::discrete &&
-      (std::isnan(xmin_) != std::isnan(xmax_))) {
+  const double effective_xmin = get_effective_xmin();
+  const double effective_xmax = get_effective_xmax();
+  const bool use_boundary_repair =
+    boundary_repair_ &&
+    (type_ == VarType::continuous || type_ == VarType::discrete) &&
+    xx.size() >= 16 &&
+    (!std::isnan(effective_xmin) || !std::isnan(effective_xmax));
+  const Eigen::VectorXd boundary_observations =
+    use_boundary_repair ? xx : Eigen::VectorXd();
+
+  if (std::isnan(effective_xmin) != std::isnan(effective_xmax)) {
     // Scaling the median boundary distance makes the transform equivariant
     // under changes of measurement units while remaining robust to outliers.
     Eigen::VectorXd distances;
-    if (std::isnan(xmin_))
-      distances = xmax_ - xx.array();
+    if (std::isnan(effective_xmin))
+      distances = effective_xmax - xx.array();
     else
-      distances = xx.array() - xmin_;
+      distances = xx.array() - effective_xmin;
     if (w.size() == 0) {
       boundary_scale_ = stats::median(distances);
     } else {
@@ -484,7 +492,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   grid_points = finalize_grid(grid_points);
 
   Eigen::VectorXd influences = fitted.col(1);
-  if (std::isnan(xmin_) && !std::isnan(xmax_))
+  if (std::isnan(effective_xmin) && !std::isnan(effective_xmax))
     influences.reverseInPlace();
 
   // construct interpolation grid
@@ -560,8 +568,8 @@ inline Eigen::VectorXd
 Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
 {
   auto fhat = pdf_continuous(x);
-  auto lb = std::floor(grid_.get_grid_min());
-  auto ub = std::ceil(grid_.get_grid_max());
+  const double lb = get_discrete_support_min();
+  const double ub = get_discrete_support_max();
   Eigen::VectorXd lvs =
     Eigen::VectorXd::LinSpaced(static_cast<size_t>(ub - lb + 1), lb, ub);
 
@@ -569,8 +577,13 @@ Kde1d::pdf_discrete(const Eigen::VectorXd& x) const
     (x.array() >= lb) && (x.array() <= ub) && (x.array() == x.array().round());
   fhat = fhat.array() * selected.cast<double>().array();
 
-  // normalize
-  fhat /= grid_.interpolate(lvs).sum();
+  // Normalize density ordinates over the integer support. The continuous
+  // jitter density between integer levels (and outside an unspecified upper
+  // support) does not represent probability mass of the discrete model.
+  const double normalizer = pdf_continuous(lvs).sum();
+  if (!(normalizer > 0.0) || !std::isfinite(normalizer))
+    throw std::runtime_error("failed to normalize the discrete density");
+  fhat /= normalizer;
 
   return fhat;
 }
@@ -615,8 +628,8 @@ Kde1d::cdf_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::cdf_discrete(const Eigen::VectorXd& x) const
 {
-  auto lb = std::floor(grid_.get_grid_min());
-  auto ub = std::ceil(grid_.get_grid_max());
+  const double lb = get_discrete_support_min();
+  const double ub = get_discrete_support_max();
   Eigen::VectorXd lvs =
     Eigen::VectorXd::LinSpaced(static_cast<size_t>(ub - lb + 1), lb, ub);
 
@@ -677,8 +690,8 @@ Kde1d::quantile_continuous(const Eigen::VectorXd& x) const
 inline Eigen::VectorXd
 Kde1d::quantile_discrete(const Eigen::VectorXd& x) const
 {
-  auto lb = std::floor(grid_.get_grid_min());
-  auto ub = std::ceil(grid_.get_grid_max());
+  const double lb = get_discrete_support_min();
+  const double ub = get_discrete_support_max();
   auto nlevels = static_cast<size_t>(ub - lb + 1);
   Eigen::VectorXd lvs = Eigen::VectorXd::LinSpaced(nlevels, lb, ub);
 
@@ -864,26 +877,24 @@ Kde1d::calculate_infl(const size_t& n,
 inline Eigen::VectorXd
 Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
 {
-  if (type_ == VarType::discrete) {
-    return x; // no transform for discrete variables
-  }
-
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
   Eigen::VectorXd x_new = x;
   if (!inverse) {
-    if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
+    if (!std::isnan(xmin) && !std::isnan(xmax)) {
       // two boundaries -> probit transform
-      auto rng = xmax_ - xmin_;
-      x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
+      auto rng = xmax - xmin;
+      x_new = (x.array() - xmin + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
-    } else if (!std::isnan(xmin_)) {
+    } else if (!std::isnan(xmin)) {
       // left boundary -> regularized fourth-root transform
-      x_new = 4.0 * (((boundary_offset_ + x.array() - xmin_) /
+      x_new = 4.0 * (((boundary_offset_ + x.array() - xmin) /
                       boundary_scale_)
                        .pow(0.25) -
                      std::pow(boundary_offset_ / boundary_scale_, 0.25));
-    } else if (!std::isnan(xmax_)) {
+    } else if (!std::isnan(xmax)) {
       // right boundary -> reflected regularized fourth-root transform
-      x_new = 4.0 * (((boundary_offset_ + xmax_ - x.array()) /
+      x_new = 4.0 * (((boundary_offset_ + xmax - x.array()) /
                       boundary_scale_)
                        .pow(0.25) -
                      std::pow(boundary_offset_ / boundary_scale_, 0.25));
@@ -891,20 +902,20 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       // no boundary -> no transform
     }
   } else {
-    if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
+    if (!std::isnan(xmin) && !std::isnan(xmax)) {
       // two boundaries -> probit transform
-      auto rng = xmax_ - xmin_;
-      x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
-    } else if (!std::isnan(xmin_)) {
+      auto rng = xmax - xmin;
+      x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin - 5e-5 * rng;
+    } else if (!std::isnan(xmin)) {
       // left boundary -> inverse regularized fourth-root transform
       x_new = boundary_scale_ *
                 (x.array() / 4.0 +
                  std::pow(boundary_offset_ / boundary_scale_, 0.25))
                   .pow(4) +
-              xmin_ - boundary_offset_;
-    } else if (!std::isnan(xmax_)) {
+              xmin - boundary_offset_;
+    } else if (!std::isnan(xmax)) {
       // right boundary -> inverse reflected regularized fourth-root transform
-      x_new = xmax_ + boundary_offset_ -
+      x_new = xmax + boundary_offset_ -
               boundary_scale_ *
                 (x.array() / 4.0 +
                  std::pow(boundary_offset_ / boundary_scale_, 0.25))
@@ -925,26 +936,24 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
 inline Eigen::VectorXd
 Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
 {
-  if (type_ == VarType::discrete) {
-    return fhat; // no transform for discrete variables
-  }
-
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
   Eigen::VectorXd corr_term(fhat.size());
-  if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
+  if (!std::isnan(xmin) && !std::isnan(xmax)) {
     // two boundaries -> probit transform
-    auto rng = xmax_ - xmin_;
-    corr_term = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
+    auto rng = xmax - xmin;
+    corr_term = (x.array() - xmin + 5e-5 * rng) / (xmax - xmin + 1e-4 * rng);
     corr_term = stats::dnorm(stats::qnorm(corr_term));
-    corr_term *= (xmax_ - xmin_ + 1e-4 * rng);
+    corr_term *= (xmax - xmin + 1e-4 * rng);
     corr_term = 1.0 / corr_term.array();
-  } else if (!std::isnan(xmin_)) {
+  } else if (!std::isnan(xmin)) {
     // left boundary -> fourth-root-transform Jacobian
-    corr_term = ((boundary_offset_ + x.array() - xmin_) / boundary_scale_)
+    corr_term = ((boundary_offset_ + x.array() - xmin) / boundary_scale_)
                   .pow(-0.75) /
                 boundary_scale_;
-  } else if (!std::isnan(xmax_)) {
+  } else if (!std::isnan(xmax)) {
     // right boundary -> reflected fourth-root-transform Jacobian
-    corr_term = ((boundary_offset_ + xmax_ - x.array()) / boundary_scale_)
+    corr_term = ((boundary_offset_ + xmax - x.array()) / boundary_scale_)
                   .pow(-0.75) /
                 boundary_scale_;
   } else {
@@ -953,7 +962,7 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
   }
 
   Eigen::VectorXd f_corr = fhat.cwiseProduct(corr_term);
-  if (std::isnan(xmin_) && !std::isnan(xmax_))
+  if (std::isnan(xmin) && !std::isnan(xmax))
     f_corr.reverseInPlace();
 
   return f_corr;
@@ -965,32 +974,32 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
 inline Eigen::VectorXd
 Kde1d::construct_grid_points(const Eigen::VectorXd& x)
 {
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
   Eigen::VectorXd rng(2);
   rng << x.minCoeff(), x.maxCoeff();
-  if (type_ == VarType::discrete) {
+  if (type_ == VarType::discrete && std::isnan(xmin) && std::isnan(xmax)) {
     // Discrete estimates use jittered observations without transformation.
-  } else if (std::isnan(xmin_) && std::isnan(xmax_)) {
+  } else if (std::isnan(xmin) && std::isnan(xmax)) {
     rng(0) -= 4 * bandwidth_;
     rng(1) += 4 * bandwidth_;
-  } else if (!std::isnan(xmin_) && !std::isnan(xmax_)) {
+  } else if (!std::isnan(xmin) && !std::isnan(xmax)) {
     Eigen::VectorXd boundaries(2);
-    boundaries << xmin_, xmax_;
+    boundaries << xmin, xmax;
     rng = boundary_transform(boundaries);
   } else {
     rng(0) = boundary_transform(Eigen::VectorXd::Constant(
-      1, std::isnan(xmin_) ? xmax_ : xmin_))(0);
+      1, std::isnan(xmin) ? xmax : xmin))(0);
     rng(1) += 4 * bandwidth_;
   }
   auto zgrid = Eigen::VectorXd::LinSpaced(grid_size_ + 1, rng(0), rng(1));
   Eigen::VectorXd grid_points = boundary_transform(zgrid, true);
 
   // Avoid round-off at finite support boundaries before evaluating the fit.
-  if (type_ != VarType::discrete) {
-    if (!std::isnan(xmin_))
-      grid_points(0) = xmin_;
-    if (!std::isnan(xmax_))
-      grid_points(std::isnan(xmin_) ? 0 : grid_size_) = xmax_;
-  }
+  if (!std::isnan(xmin))
+    grid_points(0) = xmin;
+  if (!std::isnan(xmax))
+    grid_points(std::isnan(xmin) ? 0 : grid_size_) = xmax;
 
   return grid_points;
 }
@@ -1000,14 +1009,10 @@ Kde1d::construct_grid_points(const Eigen::VectorXd& x)
 inline Eigen::VectorXd
 Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
 {
-  if (std::isnan(xmin_) && !std::isnan(xmax_))
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
+  if (std::isnan(xmin) && !std::isnan(xmax))
     grid_points.reverseInPlace();
-  if (type_ == VarType::discrete) {
-    if (!std::isnan(xmin_))
-      grid_points(0) = xmin_;
-    if (!std::isnan(xmax_))
-      grid_points(grid_points.size() - 1) = xmax_;
-  }
 
   return grid_points;
 }
@@ -1080,10 +1085,12 @@ Kde1d::prepare_endpoint(const Eigen::VectorXd& x,
                         EndpointSide side) const
 {
   EndpointData endpoint;
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
   if (side == EndpointSide::lower)
-    endpoint.dist = x.array() - xmin_;
+    endpoint.dist = x.array() - xmin;
   else
-    endpoint.dist = xmax_ - x.array();
+    endpoint.dist = xmax - x.array();
   endpoint.weights.resize(x.size());
   const Eigen::VectorXi order = tools::get_order(endpoint.dist);
   const Eigen::VectorXd unsorted_dist = endpoint.dist;
@@ -1342,6 +1349,8 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
                          Eigen::VectorXd& influences,
                          const Eigen::VectorXd& weights)
 {
+  const double xmin = get_effective_xmin();
+  const double xmax = get_effective_xmax();
   const Eigen::VectorXd case_weights =
     weights.size() > 0 ? weights : Eigen::VectorXd::Ones(x.size());
   const double n_eff =
@@ -1351,9 +1360,9 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
 
   EndpointData lower_endpoint;
   EndpointData upper_endpoint;
-  if (!std::isnan(xmin_))
+  if (!std::isnan(xmin))
     lower_endpoint = prepare_endpoint(x, case_weights, EndpointSide::lower);
-  if (!std::isnan(xmax_))
+  if (!std::isnan(xmax))
     upper_endpoint = prepare_endpoint(x, case_weights, EndpointSide::upper);
   if (!lower_endpoint.finite && !upper_endpoint.finite)
     return;
@@ -1380,7 +1389,7 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
 
   // Reflection invariance gives both endpoints the same boundary bandwidth.
   const double bandwidth_fraction =
-    (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
+    (!std::isnan(xmin) && !std::isnan(xmax)) ? 1.0 : 0.75;
   const EndpointData& bandwidth_endpoint =
     lower_endpoint.finite ? lower_endpoint : upper_endpoint;
   const double h =
@@ -1390,13 +1399,13 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
   BoundaryComponent upper;
   if (lower_endpoint.finite && n_lower > 0) {
     lower = fit_boundary_component(lower_endpoint.dist,
-                                   grid.head(n_lower).array() - xmin_,
+                                   grid.head(n_lower).array() - xmin,
                                    h,
                                    lower_endpoint.weights);
   }
   if (upper_endpoint.finite && n_upper > 0) {
     Eigen::VectorXd upper_eval_dist =
-      (xmax_ - grid.tail(n_upper).array()).reverse();
+      (xmax - grid.tail(n_upper).array()).reverse();
     upper = fit_boundary_component(
       upper_endpoint.dist, upper_eval_dist, h, upper_endpoint.weights);
   }
@@ -1426,7 +1435,8 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
   }
 
   bandwidth *= multiplier;
-  if (type_ == VarType::discrete) {
+  if (type_ == VarType::discrete && std::isnan(xmin_) &&
+      std::isnan(xmax_)) {
     bandwidth = std::max(bandwidth, 0.5 / 5);
   }
 
@@ -1436,8 +1446,66 @@ Kde1d::select_bandwidth(const Eigen::VectorXd& x,
 inline void
 Kde1d::check_xmin_xmax(const double& xmin, const double& xmax) const
 {
-  if (!std::isnan(xmax) && !std::isnan(xmax) && (xmin > xmax))
+  if (!std::isnan(xmin) && !std::isnan(xmax) && (xmin > xmax))
     throw std::invalid_argument("xmin must be smaller than xmax");
+
+  if (type_ == VarType::discrete) {
+    const auto invalid_bound = [](double bound) {
+      return !std::isnan(bound) &&
+             (!std::isfinite(bound) || bound < 0.0 ||
+              bound != std::floor(bound));
+    };
+    if (invalid_bound(xmin) || invalid_bound(xmax))
+      throw std::invalid_argument(
+        "discrete bounds must be nonnegative integers");
+  }
+}
+
+inline void
+Kde1d::check_discrete_data(const Eigen::VectorXd& x) const
+{
+  if (type_ != VarType::discrete)
+    return;
+
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (!std::isnan(x(i)) &&
+        (!std::isfinite(x(i)) || x(i) < 0.0 ||
+         x(i) != std::floor(x(i)))) {
+      throw std::invalid_argument(
+        "discrete data must be nonnegative integers");
+    }
+  }
+}
+
+inline double
+Kde1d::get_effective_xmin() const
+{
+  if (type_ == VarType::discrete && !std::isnan(xmin_))
+    return xmin_ - 0.5;
+  return xmin_;
+}
+
+inline double
+Kde1d::get_effective_xmax() const
+{
+  if (type_ == VarType::discrete && !std::isnan(xmax_))
+    return xmax_ + 0.5;
+  return xmax_;
+}
+
+inline double
+Kde1d::get_discrete_support_min() const
+{
+  return std::isnan(xmin_) ? 0.0 : xmin_;
+}
+
+inline double
+Kde1d::get_discrete_support_max() const
+{
+  const double lower = get_discrete_support_min();
+  return std::isnan(xmax_)
+           ? std::max(lower, std::ceil(grid_.get_grid_max()))
+           : xmax_;
 }
 
 inline void

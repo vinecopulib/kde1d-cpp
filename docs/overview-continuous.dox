@@ -41,8 +41,8 @@ it does not report an endpoint-expert bandwidth.
 
 `boundary_repair=true` makes each known finite endpoint eligible for repair;
 it does not force an expert to be used. Repair is considered only for
-continuous samples with at least 16 cleaned observations and effective sample
-size
+continuous or discrete samples with at least 16 cleaned observations and
+effective sample size
 
 @f[
 n_e=\frac{(\sum_i w_i)^2}{\sum_i w_i^2}
