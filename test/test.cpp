@@ -22,6 +22,18 @@ size_t nlevels = 50;
 Eigen::VectorXd x_d =
   (x_cb.array() * (static_cast<double>(nlevels) - 1)).round();
 
+TEST_CASE("sample median handles odd and even vectors", "[stats]")
+{
+  Eigen::VectorXd odd(5);
+  odd << 4.0, 1.0, 5.0, 2.0, 3.0;
+  Eigen::VectorXd even(4);
+  even << 4.0, 1.0, 3.0, 2.0;
+
+  CHECK(stats::median(odd) == 3.0);
+  CHECK(stats::median(even) == 2.5);
+  CHECK_THROWS(stats::median(Eigen::VectorXd()));
+}
+
 TEST_CASE("linear binning includes the upper endpoint", "[linear-binning]")
 {
   Eigen::VectorXd observations(3);
