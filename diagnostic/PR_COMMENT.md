@@ -31,7 +31,7 @@ Endpoints consistent with a finite nonzero limiting density receive a boundary
 expert. Exploding, vanishing, ambiguous, and degenerate endpoints retain the
 bulk. The expert is a Gaussian local-linear equivalent-kernel estimate,
 
-using an automatically selected degree-2 plug-in bandwidth on the original
+using an automatically selected bandwidth on the original
 scale. The selector uses all
 positive-weight observations on bounded support and the closest 75% by row
 count on one-sided support. The two required Gaussian convolutions are

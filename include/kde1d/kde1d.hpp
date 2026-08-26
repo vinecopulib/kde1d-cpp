@@ -1099,7 +1099,7 @@ Kde1d::prepare_endpoint(const Eigen::VectorXd& x,
 //! closest `fraction` of positive-weight observations are used by row count.
 //! @param endpoint sorted endpoint distances and case weights.
 //! @param fraction fraction of positive-weight observations used for selection.
-//! @return degree-two plug-in bandwidth after applying the public multiplier.
+//! @return selected boundary bandwidth after applying the public multiplier.
 inline double
 Kde1d::select_boundary_bandwidth(const EndpointData& endpoint,
                                  double fraction) const
@@ -1312,7 +1312,7 @@ Kde1d::fuse_boundary_components(const Eigen::VectorXd& grid,
 
 //! Fuses the transformed bulk density @f$\widehat f_B@f$ with endpoint
 //! densities @f$\widehat f_L@f$ and @f$\widehat f_U@f$. Each endpoint density
-//! uses a local-linear kernel with a degree-2 plug-in bandwidth, selected from
+//! uses a local-linear kernel with an automatically selected bandwidth, based on
 //! all distances on bounded support and the closest
 //! 75% of positive-weight observations on one-sided support. Smooth weights
 //! @f$w_L@f$ and @f$w_U@f$ are functions of the weighted bulk CDF and shrink
@@ -1378,7 +1378,7 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
   const Eigen::Index n_lower = (w_l.array() > 0.0).count();
   const Eigen::Index n_upper = (w_u.array() > 0.0).count();
 
-  // Reflection invariance gives both endpoints the same degree-2 bandwidth.
+  // Reflection invariance gives both endpoints the same boundary bandwidth.
   const double bandwidth_fraction =
     (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
   const EndpointData& bandwidth_endpoint =

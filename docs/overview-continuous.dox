@@ -65,7 +65,7 @@ classifier and all expert calculations.
 
 For a selected endpoint, the expert is a Gaussian local-linear
 equivalent-kernel estimate on the original scale. It uses an automatically
-selected degree-two plug-in bandwidth. On two-sided support the selector uses
+selected bandwidth. On two-sided support the selector uses
 all positive-weight observations; on
 one-sided support it uses the closest 75% by row count. Public case weights
 enter the expert estimand and bandwidth selector. A manual bulk `bandwidth`
