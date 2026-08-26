@@ -935,7 +935,7 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
     auto rng = xmax_ - xmin_;
     corr_term = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = stats::dnorm(stats::qnorm(corr_term));
-    corr_term /= (xmax_ - xmin_ + 1e-4 * rng);
+    corr_term *= (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = 1.0 / corr_term.array();
   } else if (!std::isnan(xmin_)) {
     // left boundary -> fourth-root-transform Jacobian
