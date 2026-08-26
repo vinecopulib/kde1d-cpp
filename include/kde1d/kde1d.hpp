@@ -9,21 +9,26 @@
 
 namespace kde1d {
 
+//! Kind of variable a `Kde1d` models.
 enum class VarType
 {
-  continuous,
-  discrete,
-  zero_inflated
+  continuous,   //!< real-valued, with a Lebesgue density.
+  discrete,     //!< integer-valued, with a probability mass function.
+  zero_inflated //!< a point mass at zero, plus a continuous component.
 };
 
 //! Local-polynomial density estimation in one dimension.
 //!
-//! Continuous fits, bounded discrete fits, and the continuous component of
-//! zero-inflated fits use a transformed local-likelihood bulk estimator. When
-//! `boundary_repair` is enabled, finite support endpoints may additionally use
-//! a nonnegative local-linear boundary kernel.
-//! See @ref overview-continuous and @ref overview-discrete for the transforms,
-//! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
+//! Handles continuous, integer-valued and zero-inflated variables, each with
+//! optionally bounded support. What a bound means differs by type: for a
+//! continuous variable it is the support; for a discrete one it is the lowest
+//! or highest level that can occur, and must be an integer; for a
+//! zero-inflated one it constrains the continuous component only, leaving the
+//! zeros exempt.
+//!
+//! See @ref overview-continuous and @ref overview-discrete for the estimator
+//! itself -- the support transforms, the endpoint treatment, and how the
+//! effective degrees of freedom are approximated.
 class Kde1d
 {
 public:
@@ -50,13 +55,13 @@ public:
         double xmin,
         double xmax,
         VarType type,
-        double prob0_ = 0.0);
+        double prob0 = 0.0);
 
   Kde1d(const interp::InterpolationGrid& grid,
         double xmin = NAN,
         double xmax = NAN,
         std::string type = "continuous",
-        double prob0_ = 0.0);
+        double prob0 = 0.0);
 
   void fit(const Eigen::VectorXd& x,
            const Eigen::VectorXd& weights = Eigen::VectorXd());
@@ -73,13 +78,20 @@ public:
                            const bool& check_fitted = true) const;
 
   // getters
-  //! @return the fitted density values on the interpolation grid.
+  //! @return the fitted density ordinates, on the original scale. For a
+  //!   discrete variable these are the jitter density, not probabilities:
+  //!   `pdf()` forms the masses from the ordinates at the integer levels.
   Eigen::VectorXd get_values() const { return grid_.get_values(); }
-  //! @return the grid points used for interpolation (original scale).
+  //! @return the points the values sit on, on the original scale. For a
+  //!   discrete variable the grid runs half a unit past each finite bound,
+  //!   since that is where the jitter cells end.
   Eigen::VectorXd get_grid_points() const { return grid_.get_grid_points(); }
-  //! @return the lower bound of the support (`NaN` if unbounded below).
+  //! @return the lower bound of the support (`NaN` if unbounded below). An
+  //!   integer for a discrete variable; for a zero-inflated one it bounds the
+  //!   continuous component only.
   double get_xmin() const { return xmin_; }
-  //! @return the upper bound of the support (`NaN` if unbounded above).
+  //! @return the upper bound of the support (`NaN` if unbounded above). See
+  //!   `get_xmin()` for what it means per variable type.
   double get_xmax() const { return xmax_; }
   //! @return the variable type (`continuous`, `discrete`, or `zero_inflated`).
   VarType get_type() const { return type_; }
@@ -91,10 +103,12 @@ public:
   double get_prob0() const { return prob0_; }
   //! @return the bandwidth multiplier supplied at construction.
   double get_multiplier() const { return multiplier_; }
-  //! @return the transformed-scale bulk bandwidth used by the most recent
-  //!   `fit()`, before the multiplier is applied. Equals the bandwidth
-  //!   supplied at construction when one was, and is `NaN` when none was and
-  //!   `fit()` has not run. Boundary experts select a separate bandwidth.
+  //! @return the bandwidth used by the most recent `fit()`, before the
+  //!   multiplier is applied. Equals the bandwidth supplied at construction
+  //!   when one was, and is `NaN` when none was and `fit()` has not run. It is
+  //!   measured on the scale the fit works on, which for a bounded variable is
+  //!   the transformed scale rather than the data's; and a repaired endpoint
+  //!   is fitted with its own bandwidth, which this does not report.
   double get_bandwidth() const { return bandwidth_; }
   //! @return the polynomial degree used by the local-likelihood
   //!   estimator (0, 1, or 2).
@@ -102,22 +116,30 @@ public:
   //! @return the requested number of grid points (the value passed
   //!   to the constructor).
   size_t get_grid_size() const { return grid_size_; }
-  //! @return whether boundary experts are eligible at finite endpoints.
+  //! @return whether a finite bound may be fitted with a dedicated boundary
+  //!   estimator; see the constructor's `boundary_repair`.
   bool get_boundary_repair() const { return boundary_repair_; }
-  //! @return the actual number of grid points after fitting (which
-  //!   may differ slightly from `get_grid_size()` due to
-  //!   boundary-snapping in `finalize_grid()`).
+  //! @return the number of grid points the fit built, which is one more than
+  //!   `get_grid_size()` requested, and `0` before `fit()` has run.
   size_t get_actual_grid_size() const { return grid_.get_grid_points().size(); }
-  //! @return the effective degrees of freedom of the fitted estimator
-  //!   (the sum of the per-observation influence values).
+  //! @return the effective degrees of freedom of the fitted estimator. A
+  //!   zero-inflated fit counts its point mass as one more.
   double get_edf() const { return edf_; }
-  //! @return the log-likelihood of the data under the fitted estimate.
+  //! @return the log-likelihood of the data under the fitted estimate. For a
+  //!   zero-inflated fit this includes the point mass's contribution, which is
+  //!   added analytically rather than evaluated: the zeros are removed before
+  //!   the continuous component is fitted.
   double get_loglik() const { return loglik_; }
   //! Updates the support bounds. Only valid before `fit()` has been called.
   //! @param xmin lower bound (`NaN` for unbounded).
   //! @param xmax upper bound (`NaN` for unbounded).
+  //! @throws std::runtime_error if `fit()` has already been called.
+  //! @throws std::invalid_argument if `xmin > xmax`, or if either bound is
+  //!   not an integer for a discrete variable.
   void set_xmin_xmax(double xmin = NAN, double xmax = NAN);
 
+  //! @return a one-line summary of the configuration: the bounds, the variable
+  //!   type, and the fit's parameters.
   std::string str() const
   {
     std::stringstream ss;
@@ -272,21 +294,27 @@ private:
 };
 
 //! constructor for fitting the density estimate.
-//! @param xmin lower bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param xmax upper bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param type variable type: `VarType::continuous`  for
+//! @param xmin lower bound for the support, `NaN` means no boundary. Must be
+//!   an integer for a discrete variable, where it is the lowest level that can
+//!   occur; for a zero-inflated variable it bounds the continuous component
+//!   only, and the zeros are exempt from it.
+//! @param xmax upper bound for the support, `NaN` means no boundary. See
+//!   `xmin` for what it means per variable type.
+//! @param type variable type: `VarType::continuous` for
 //!   continuous variables, `VarType::discrete` for discrete integer
 //!   variables, or `VarType::zero_inflated` for zero-inflated
 //!   variables.
 //! @param multiplier bandwidth multiplier (default is 1.0).
 //! @param bandwidth positive bandwidth parameter (`NaN` means automatic
-//! selection).
+//!   selection). Measured on the scale the fit works on, which for a bounded
+//!   variable is the transformed scale rather than the data's.
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
-//! @param boundary_repair whether finite endpoints are eligible for boundary
-//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
+//! @param boundary_repair whether a finite bound may be fitted with a
+//!   dedicated boundary estimator rather than the transformed fit (default is
+//!   `true`). Eligibility, not a guarantee: it needs a finite bound and at
+//!   least 16 observations, and an endpoint whose local behavior is ambiguous
+//!   keeps the transformed fit. With neither bound set it does nothing.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     VarType type,
@@ -322,15 +350,17 @@ inline Kde1d::Kde1d(double xmin,
 
 //! construct model from an already fit interpolation grid.
 //! @param grid the interpolation grid.
-//! @param xmin lower bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param xmax upper bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param type variable type: `VarType::continuous`  for
+//! @param xmin lower bound for the support, `NaN` means no boundary. Must be
+//!   an integer for a discrete variable, where it is the lowest level that can
+//!   occur; for a zero-inflated variable it bounds the continuous component
+//!   only, and the zeros are exempt from it.
+//! @param xmax upper bound for the support, `NaN` means no boundary. See
+//!   `xmin` for what it means per variable type.
+//! @param type variable type: `VarType::continuous` for
 //!   continuous variables, `VarType::discrete` for discrete integer
 //!   variables, or `VarType::zero_inflated` for zero-inflated
 //!   variables.
-//! @param prob0 point mass at 0.
+//! @param prob0 point mass at zero, for a zero-inflated variable.
 inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
                     double xmin,
                     double xmax,
@@ -350,21 +380,27 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 }
 
 //! constructor for fitting the density estimate.
-//! @param xmin lower bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param xmax upper bound for the support of the density, `NaN` means no
-//!   boundary.
+//! @param xmin lower bound for the support, `NaN` means no boundary. Must be
+//!   an integer for a discrete variable, where it is the lowest level that can
+//!   occur; for a zero-inflated variable it bounds the continuous component
+//!   only, and the zeros are exempt from it.
+//! @param xmax upper bound for the support, `NaN` means no boundary. See
+//!   `xmin` for what it means per variable type.
 //! @param type variable type; must be one of {"c", "cont", "continuous"} for
 //!   continuous variables, one of {"d", "disc", "discrete"} for discrete
-//!   integer variables, or one of {"zi", "zinfl", "zero-inflated"} for
-//!   zero-inflated variables.
+//!   integer variables, or one of {"zi", "zinfl", "zero-inflated",
+//!   "zero_inflated"} for zero-inflated variables.
 //! @param multiplier bandwidth multiplier (default is 1.0).
 //! @param bandwidth positive bandwidth parameter (`NaN` means automatic
-//! selection).
+//!   selection). Measured on the scale the fit works on, which for a bounded
+//!   variable is the transformed scale rather than the data's.
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
-//! @param boundary_repair whether finite endpoints are eligible for boundary
-//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
+//! @param boundary_repair whether a finite bound may be fitted with a
+//!   dedicated boundary estimator rather than the transformed fit (default is
+//!   `true`). Eligibility, not a guarantee: it needs a finite bound and at
+//!   least 16 observations, and an endpoint whose local behavior is ambiguous
+//!   keeps the transformed fit. With neither bound set it does nothing.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     std::string type,
@@ -386,15 +422,17 @@ inline Kde1d::Kde1d(double xmin,
 
 //! construct model from an already fit interpolation grid.
 //! @param grid the interpolation grid.
-//! @param xmin lower bound for the support of the density, `NaN` means no
-//!   boundary.
-//! @param xmax upper bound for the support of the density, `NaN` means no
-//!   boundary.
+//! @param xmin lower bound for the support, `NaN` means no boundary. Must be
+//!   an integer for a discrete variable, where it is the lowest level that can
+//!   occur; for a zero-inflated variable it bounds the continuous component
+//!   only, and the zeros are exempt from it.
+//! @param xmax upper bound for the support, `NaN` means no boundary. See
+//!   `xmin` for what it means per variable type.
 //! @param type variable type; must be one of {"c", "cont", "continuous"} for
 //!   continuous variables, one of {"d", "disc", "discrete"} for discrete
-//!   integer variables, or one of {"zi", "zinfl", "zero-inflated"} for
-//!   zero-inflated variables.
-//! @param prob0 point mass at 0.
+//!   integer variables, or one of {"zi", "zinfl", "zero-inflated",
+//!   "zero_inflated"} for zero-inflated variables.
+//! @param prob0 point mass at zero, for a zero-inflated variable.
 inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
                     double xmin,
                     double xmax,
@@ -405,8 +443,18 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 }
 
 //! Fits the kernel density estimate to data.
-//! @param x vector of observations
+//!
+//! Observations that are `NaN` are dropped. Weights are rescaled to average
+//! one, so only their relative sizes matter. Calling this again re-selects the
+//! bandwidth unless one was supplied at construction.
+//!
+//! @param x vector of observations.
 //! @param weights vector of weights for each observation (optional).
+//! @throws std::invalid_argument if `x` is empty, if `weights` is given with a
+//!   different length, if the variable is discrete and any observation is not
+//!   an integer, or if any observation lies outside `[xmin, xmax]` -- for a
+//!   zero-inflated variable, any nonzero observation.
+//! @throws std::runtime_error if the discrete masses cannot be normalized.
 inline void
 Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 {
@@ -527,9 +575,15 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   bandwidth_ = bandwidth_ / multiplier_;
 }
 
-//! Computes the pdf of the kernel density estimate by interpolation.
+//! Evaluates the fitted density.
+//!
+//! With respect to the variable's own reference measure: a density for a
+//! continuous variable, a probability for a discrete one, and for a
+//! zero-inflated one the point mass at zero and a density elsewhere.
+//!
 //! @param x vector of evaluation points.
-//! @param check_fitted an optional logical to bypass the check.
+//! @param check_fitted whether to verify the estimate has been fitted; passing
+//!   `false` skips the check, and evaluating an unfitted estimate is undefined.
 //! @return a vector of pdf values.
 inline Eigen::VectorXd
 Kde1d::pdf(const Eigen::VectorXd& x, const bool& check_fitted) const
@@ -594,10 +648,10 @@ Kde1d::pdf_zi(const Eigen::VectorXd& x) const
     .select(prob0_ * ones.array(), (1 - prob0_) * pdf_continuous(x).array());
 }
 
-//! Computes the cdf of the kernel density estimate by numerical
-//! integration.
+//! Evaluates the fitted distribution function.
 //! @param x vector of evaluation points.
-//! @param check_fitted an optional logical to bypass the check.
+//! @param check_fitted whether to verify the estimate has been fitted; see
+//!   `pdf()`.
 //! @return a vector of cdf values.
 inline Eigen::VectorXd
 Kde1d::cdf(const Eigen::VectorXd& x, const bool& check_fitted) const
@@ -656,10 +710,13 @@ Kde1d::cdf_zi(const Eigen::VectorXd& x) const
   return prob0_ * zi + (1 - prob0_) * (prob0_ < 1 ? cdf_continuous(x) : zeros);
 }
 
-//! Computes the quantile function by numerical inversion of the cdf.
-//! @param x vector of evaluation points (probabilities in ``(0, 1)``).
-//! @param check_fitted an optional logical to bypass the check.
+//! Evaluates the fitted quantile function.
+//! @param x vector of probabilities in `[0, 1]`; `0` and `1` give the ends of
+//!   the fitted grid.
+//! @param check_fitted whether to verify the estimate has been fitted; see
+//!   `pdf()`.
 //! @return a vector of quantiles.
+//! @throws std::invalid_argument if any probability lies outside `[0, 1]`.
 inline Eigen::VectorXd
 Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
 {
@@ -667,7 +724,7 @@ Kde1d::quantile(const Eigen::VectorXd& x, const bool& check_fitted) const
     this->check_fitted();
   }
   if ((x.minCoeff() < 0) || (x.maxCoeff() > 1))
-    throw std::invalid_argument("probabilities must lie in (0, 1).");
+    throw std::invalid_argument("probabilities must lie in [0, 1].");
 
   switch (type_) {
     default:
@@ -725,8 +782,10 @@ Kde1d::quantile_zi(const Eigen::VectorXd& x) const
 
 //! Simulates data from the fitted density.
 //! @param n the number of observations to simulate.
-//! @param seeds an optional vector of seeds.
-//! @param check_fitted an optional logical to bypass the check.
+//! @param seeds seeds for the random number generator; an empty vector draws
+//!   a nondeterministic sample.
+//! @param check_fitted whether to verify the estimate has been fitted; see
+//!   `pdf()`.
 //! @return simulated observations from the kernel density.
 inline Eigen::VectorXd
 Kde1d::simulate(size_t n,
@@ -1590,8 +1649,9 @@ Kde1d::as_enum(std::string type) const
     return VarType::zero_inflated;
   } else {
     std::stringstream ss;
-    ss << "variable type '" << type << "' unknown; must be one of"
-       << "{c, cont, continuous, d, disc, discrete, zi, zinfl, zero-inflated}."
+    ss << "variable type '" << type << "' unknown; must be one of "
+       << "{c, cont, continuous, d, disc, discrete, zi, zinfl, "
+       << "zero-inflated, zero_inflated}."
        << std::endl;
     throw std::invalid_argument(ss.str());
   }
