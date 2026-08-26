@@ -47,10 +47,10 @@ Let $F_B$ be the normalized bulk CDF,
 $$
 q=\min(1/4,n_e^{-1/2}),
 \qquad
-g(p)=1-3\min(1,p/q)^2+2\min(1,p/q)^3.
+g(p)=\{1-\min(1,p/q)^2\}^2.
 $$
 
-Selected lower and upper experts receive weights
+Selected lower and upper experts receive the biweight fusion weights
 $w_L(x)=g\{F_B(x)\}$ and $w_U(x)=g\{1-F_B(x)\}$, giving
 
 $$

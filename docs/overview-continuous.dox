@@ -83,10 +83,10 @@ Let @f$F_B@f$ be the normalized bulk CDF and
 @f[
 q=\min(1/4,n_e^{-1/2}),
 \qquad
-g(p)=1-3\min(1,p/q)^2+2\min(1,p/q)^3.
+g(p)=\{1-\min(1,p/q)^2\}^2.
 @f]
 
-For selected lower and upper endpoints, the fusion weights are
+For selected lower and upper endpoints, the biweight fusion weights are
 @f$w_L(x)=g\{F_B(x)\}@f$ and @f$w_U(x)=g\{1-F_B(x)\}@f$; a missing or rejected
 endpoint has weight zero. The final density before numerical normalization is
 

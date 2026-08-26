@@ -1342,7 +1342,7 @@ Kde1d::fuse_boundary_components(const Eigen::VectorXd& grid,
 //! @f[
 //! \begin{align*}
 //! q &= \min(1/4,n_e^{-1/2}), & z(p) &= \min(1,p/q), \\[2pt]
-//! g(p) &= 1-3z(p)^2+2z(p)^3, \\[2pt]
+//! g(p) &= \{1-z(p)^2\}^2, \\[2pt]
 //! w_L &= g(F_B), & w_U &= g(1-F_B), \\[2pt]
 //! \widehat f
 //!   &= w_L\widehat f_L+(1-w_L-w_U)\widehat f_B+w_U\widehat f_U, \\[2pt]
@@ -1384,7 +1384,7 @@ Kde1d::repair_boundaries(const Eigen::VectorXd& x,
   const double q = std::min(0.25, 1.0 / std::sqrt(n_eff));
   auto endpoint_weight = [&](double probability) {
     const double z = std::min(1.0, probability / q);
-    return 1.0 - (3.0 * z * z - 2.0 * z * z * z);
+    return (1.0 - z * z) * (1.0 - z * z);
   };
 
   // Only evaluate endpoint fits where their fusion weights are nonzero.
