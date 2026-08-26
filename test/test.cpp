@@ -150,8 +150,8 @@ TEST_CASE("one-sided finite endpoints use the boundary expert",
   CHECK(fit.get_values().isApprox(manual.get_values(), 1e-12));
 
   Eigen::VectorXd expected_density(6);
-  expected_density << 0.9883801, 0.9883894, 0.9865788, 0.9497592, 0.7314455,
-    0.0077357;
+  expected_density << 0.9797951, 0.9798032, 0.9780643, 0.9448344, 0.7316556,
+    0.0077380;
   Eigen::VectorXd selected_density(6);
   selected_density << fit.get_values()(0), fit.get_values()(4),
     fit.get_values()(24), fit.get_values()(49), fit.get_values()(99),
@@ -250,7 +250,7 @@ TEST_CASE("two-sided endpoints are classified independently",
   fit.fit(observations);
 
   Eigen::VectorXd expected_density(6);
-  expected_density << 1.9986281, 1.9954211, 1.9825467, 0.9946342, 0.0562125,
+  expected_density << 1.9985571, 1.9950070, 1.9824915, 0.9946390, 0.0562128,
     0.0000020;
   Eigen::VectorXd selected_density(6);
   selected_density << fit.get_values()(0), fit.get_values()(49),

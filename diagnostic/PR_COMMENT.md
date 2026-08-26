@@ -29,17 +29,12 @@ $$
 
 Endpoints consistent with a finite nonzero limiting density receive a boundary
 expert. Exploding, vanishing, ambiguous, and degenerate endpoints retain the
-bulk. The expert is the equal average
+bulk. The expert is a Gaussian local-linear equivalent-kernel estimate,
 
-$$
-\widehat f_E=(\widehat f_{\mathrm{local\ linear}}
-              +\widehat f_{\mathrm{local\ quadratic}})/2
-$$
-
-of Gaussian equivalent-kernel estimates. Both kernels share an automatically
-selected degree-2 plug-in bandwidth on the original scale, using all
+using an automatically selected degree-2 plug-in bandwidth on the original
+scale. The selector uses all
 positive-weight observations on bounded support and the closest 75% by row
-count on one-sided support. The three required Gaussian convolutions are
+count on one-sided support. The two required Gaussian convolutions are
 evaluated on a shared 256-bin FFT grid.
 
 Let $F_B$ be the normalized bulk CDF,
@@ -66,6 +61,9 @@ approximation that holds the classifier, selected bandwidths, fusion weights,
 clamps, and normalization fixed.
 
 ## Validation design
+
+The large-scale tables below predate the biweight and local-linear
+simplifications and will be refreshed before merge.
 
 The primary benchmark is the actual pre-PR package at parent commit `7faec53`
 with C++ commit `b16d514`: log transform for one-sided support and probit for

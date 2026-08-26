@@ -20,8 +20,8 @@ enum class VarType
 //!
 //! Continuous fits use a transformed local-likelihood estimate as their bulk
 //! component. When `boundary_repair` is enabled, finite support endpoints may
-//! additionally use a nonnegative blend of local-linear and local-quadratic
-//! boundary kernels. See @ref overview-continuous for the transforms,
+//! additionally use a nonnegative local-linear boundary kernel. See
+//! @ref overview-continuous for the transforms,
 //! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
 class Kde1d
 {
@@ -157,18 +157,14 @@ private:
   {
     Eigen::VectorXd f0;
     Eigen::VectorXd f1;
-    Eigen::VectorXd f2;
     Eigen::VectorXd influence_weight;
     double upper{ 0.0 };
   };
 
   struct BoundaryKernelCoefficients
   {
-    double c10;
-    double c11;
-    double c20;
-    double c21;
-    double c22;
+    double c0;
+    double c1;
   };
 
   // data members
@@ -1129,7 +1125,7 @@ Kde1d::select_boundary_bandwidth(const EndpointData& endpoint,
   return selector.select_bandwidth(2) * multiplier_;
 }
 
-//! Computes the ordinary Gaussian KDE and its first two derivatives on the
+//! Computes the ordinary Gaussian KDE and its first derivative on the
 //! regular FFT grid used by a boundary component. The influence weights are
 //! the average normalized case weights in the same bins.
 //! @param dist ordered endpoint distances.
@@ -1163,7 +1159,6 @@ Kde1d::compute_boundary_convolutions(const Eigen::VectorXd& dist,
   const double scale = fft_weight / weights.sum();
   convolutions.f0 = scale * kde_fft.kde_drv(0);
   convolutions.f1 = scale * kde_fft.kde_drv(1);
-  convolutions.f2 = scale * kde_fft.kde_drv(2);
   convolutions.influence_weight = Eigen::VectorXd::Ones(num_bins + 1);
   if (weights.minCoeff() != weights.maxCoeff()) {
     const Eigen::VectorXd count = tools::linbin(dist.head(n_fft),
@@ -1180,10 +1175,10 @@ Kde1d::compute_boundary_convolutions(const Eigen::VectorXd& dist,
   return convolutions;
 }
 
-//! Computes the first inverse-moment rows for degree-one and degree-two
-//! Gaussian boundary kernels at standardized endpoint distance @f$a@f$.
+//! Computes the first inverse-moment row for the local-linear Gaussian
+//! boundary kernel at standardized endpoint distance @f$a@f$.
 //! @param a endpoint distance divided by bandwidth.
-//! @return coefficients @f$c_{10},c_{11},c_{20},c_{21},c_{22}@f$.
+//! @return coefficients @f$c_0,c_1@f$.
 inline Kde1d::BoundaryKernelCoefficients
 Kde1d::boundary_kernel_coefficients(double a) const
 {
@@ -1191,50 +1186,35 @@ Kde1d::boundary_kernel_coefficients(double a) const
   const double mu0 = 0.5 * std::erfc(-a * 0.7071067811865475);
   const double mu1 = -phi;
   const double mu2 = mu0 - a * phi;
-  const double mu3 = -(a * a + 2.0) * phi;
-  const double mu4 = 3.0 * mu0 - (a * a * a + 3.0 * a) * phi;
-  const double det1 = mu0 * mu2 - mu1 * mu1;
-  const double det2 = mu0 * (mu2 * mu4 - mu3 * mu3) -
-                      mu1 * (mu1 * mu4 - mu2 * mu3) +
-                      mu2 * (mu1 * mu3 - mu2 * mu2);
-  return { mu2 / det1,
-           -mu1 / det1,
-           (mu2 * mu4 - mu3 * mu3) / det2,
-           (mu2 * mu3 - mu1 * mu4) / det2,
-           (mu1 * mu3 - mu2 * mu2) / det2 };
+  const double denom = mu0 * mu2 - mu1 * mu1;
+  return { mu2 / denom, -mu1 / denom };
 }
 
-//! Fits the average of Gaussian local-linear and local-quadratic equivalent
-//! kernels from sample distances @f$d@f$ to endpoint-distance grid @f$t@f$.
-//! For degree @f$p@f$, shared bandwidth @f$h@f$, truncated Gaussian moments
-//! @f$\mu_r(a)@f$, and @f$M_p(a)=[\mu_{j+k}(a)]_{j,k=0}^p@f$,
+//! Fits a Gaussian local-linear equivalent kernel from sample distances
+//! @f$d@f$ to endpoint-distance grid @f$t@f$. For bandwidth @f$h@f$,
+//! truncated Gaussian moments @f$\mu_r(a)@f$, and
+//! @f$M(a)=[\mu_{j+k}(a)]_{j,k=0}^1@f$,
 //! @f[
 //! \begin{align*}
 //! a &= t/h, & u_i &= (t-d_i)/h, \\[2pt]
-//! \widehat f_p(t;h)
+//! \widehat f_E(t;h)
 //!   &= \frac{1}{nh}\sum_{i=1}^n w_i\phi(u_i)\,
-//!      e_0^\mathsf{T}M_p(a)^{-1}
-//!      (1,u_i,\ldots,u_i^p)^\mathsf{T}, \\[2pt]
-//! \widehat f_\partial(t)
-//!   &= \{\widehat f_1(t;h)+\widehat f_2(t;h)\}/2.
+//!      e_0^\mathsf{T}M(a)^{-1}(1,u_i)^\mathsf{T}.
 //! \end{align*}
 //! @f]
-//! Writing @f$f^{(r)}@f$ for the @f$r@f$th derivative of the ordinary
-//! Gaussian KDE and @f$c_{pj}@f$ for the entries of the first row of
-//! @f$M_p(a)^{-1}@f$, the same estimator is
+//! Writing @f$f^{(1)}@f$ for the first derivative of the ordinary Gaussian KDE
+//! and @f$(c_0,c_1)=e_0^\mathsf{T}M(a)^{-1}@f$, the same estimator is
 //! @f[
 //! \begin{align*}
-//! \widehat f_\partial(t)
-//!   &= \frac{1}{2}\{(c_{10}+c_{20}+c_{22})f(t)
-//!     -h(c_{11}+c_{21})f^{(1)}(t)+h^2c_{22}f^{(2)}(t)\}.
+//! \widehat f_E(t;h) &= c_0f(t)-hc_1f^{(1)}(t).
 //! \end{align*}
 //! @f]
-//! This identity evaluates the three convolutions by FFT.
-//! Both kernels use the same normalized case weights @f$w_i@f$. The returned
-//! influence numerator is the corresponding average diagonal contribution.
+//! This identity evaluates the two convolutions by FFT. The returned influence
+//! numerator is the diagonal contribution with normalized case weights
+//! @f$w_i@f$.
 //! @param dist ordered distances of the observations from the support endpoint.
 //! @param eval_dist endpoint distances at which to evaluate the component.
-//! @param bandwidth shared bandwidth of both equivalent kernels.
+//! @param bandwidth bandwidth of the equivalent kernel.
 //! @param weights correspondingly ordered case weights with mean one.
 //! @return the density and influence numerator on `eval_dist`.
 inline Kde1d::BoundaryComponent
@@ -1268,13 +1248,11 @@ Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
     auto interpolate = [&](const Eigen::VectorXd& values) {
       return (1.0 - fraction) * values(bin) + fraction * values(bin + 1);
     };
-    fit.density(j) =
-      0.5 * ((c.c10 + c.c20 + c.c22) * interpolate(convolutions.f0) -
-             h * (c.c11 + c.c21) * interpolate(convolutions.f1) +
-             h * h * c.c22 * interpolate(convolutions.f2));
+    fit.density(j) = c.c0 * interpolate(convolutions.f0) -
+                     h * c.c1 * interpolate(convolutions.f1);
     fit.influence_num(j) =
-      K0_ * (c.c10 + c.c20) * interpolate(convolutions.influence_weight) /
-      (2.0 * static_cast<double>(dist.size()) * h);
+      K0_ * c.c0 * interpolate(convolutions.influence_weight) /
+      (static_cast<double>(dist.size()) * h);
   }
 
   // Remove unstable local-polynomial values.
@@ -1334,8 +1312,8 @@ Kde1d::fuse_boundary_components(const Eigen::VectorXd& grid,
 
 //! Fuses the transformed bulk density @f$\widehat f_B@f$ with endpoint
 //! densities @f$\widehat f_L@f$ and @f$\widehat f_U@f$. Each endpoint density
-//! averages local-linear and local-quadratic kernels using one degree-2
-//! bandwidth, selected from all distances on bounded support and the closest
+//! uses a local-linear kernel with a degree-2 plug-in bandwidth, selected from
+//! all distances on bounded support and the closest
 //! 75% of positive-weight observations on one-sided support. Smooth weights
 //! @f$w_L@f$ and @f$w_U@f$ are functions of the weighted bulk CDF and shrink
 //! with effective sample size @f$n_e@f$:

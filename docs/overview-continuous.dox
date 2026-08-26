@@ -63,16 +63,16 @@ Weighted fits use effective counts and the more conservative lower threshold
 behavior retains the bulk fit. Setting `boundary_repair=false` skips the
 classifier and all expert calculations.
 
-For a selected endpoint, the expert is the equal average of Gaussian
-local-linear and local-quadratic equivalent-kernel estimates on the original
-scale. Both use one automatically selected degree-two plug-in bandwidth. On
-two-sided support the selector uses all positive-weight observations; on
+For a selected endpoint, the expert is a Gaussian local-linear
+equivalent-kernel estimate on the original scale. It uses an automatically
+selected degree-two plug-in bandwidth. On two-sided support the selector uses
+all positive-weight observations; on
 one-sided support it uses the closest 75% by row count. Public case weights
 enter the expert estimand and bandwidth selector. A manual bulk `bandwidth`
 does not replace this expert bandwidth, while `multiplier` scales both.
 
 The equivalent kernel is expressed as a pointwise combination of an ordinary
-Gaussian KDE and its first two derivatives. These three convolutions are
+Gaussian KDE and its first derivative. These two convolutions are
 evaluated on a 256-bin FFT grid. Invalid or nonpositive local-polynomial values
 are set to zero before fusion.
 
