@@ -18,7 +18,8 @@ z(x)=\Phi^{-1}\left(\frac{x-a+5\times10^{-5}R}{1.0001R}\right).
 If exactly one endpoint is finite, let @f$d(x)@f$ denote distance from it.
 The scale @f$s@f$ is the weighted median of the observed distances, with a
 maximum-distance and unit fallback for degenerate samples, and
-@f$\epsilon=10^{-5}s@f$. The one-sided transform is
+@f$\epsilon=10^{-5}s@f$. The one-sided transform is an endpoint-anchored,
+scaled member of the Box-Cox family with power parameter @f$\lambda=1/4@f$:
 
 @f[
 z(x)=4\left[\left\{\frac{\epsilon+d(x)}{s}\right\}^{1/4}
@@ -28,7 +29,7 @@ z(x)=4\left[\left\{\frac{\epsilon+d(x)}{s}\right\}^{1/4}
 =\frac{1}{s}\left\{\frac{\epsilon+d(x)}{s}\right\}^{-3/4}.
 @f]
 
-The fourth-root transform and its Jacobian are scale equivariant. The small
+This Box-Cox transform and its Jacobian are scale equivariant. The small
 offset keeps the transformed endpoint finite. Density values are transformed
 back to the original scale and normalized on the interpolation grid.
 
