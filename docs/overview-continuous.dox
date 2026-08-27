@@ -37,12 +37,25 @@ An explicitly supplied `bandwidth` is interpreted on the transformed scale.
 `get_bandwidth()` reports that bulk bandwidth before `multiplier` is applied;
 it does not report an endpoint-expert bandwidth.
 
+@section continuous-zero-inflated Zero-inflated fits
+
+For a zero-inflated fit, exact zeros form a separate point mass and the
+remaining observations form a continuous hurdle component. Finite `xmin` and
+`xmax` constrain only this continuous component: zeros need not lie in the
+interval, while every nonzero observation must. After zeros are removed, the
+continuous observations use the same support transform, normalization, and
+adaptive boundary repair as an ordinary continuous fit. The bounds are used
+as supplied, without the half-unit adjustment used for discrete jitter cells.
+If all observations are zero, the point mass is one and no continuous
+component is fitted.
+
 @section continuous-repair Boundary repair
 
 `boundary_repair=true` makes each known finite endpoint eligible for repair;
 it does not force an expert to be used. Repair is considered only for
-continuous samples with at least 16 cleaned observations and effective sample
-size
+continuous samples, bounded discrete jitter samples, or nonzero components of
+zero-inflated samples with at least 16 cleaned observations and effective
+sample size
 
 @f[
 n_e=\frac{(\sum_i w_i)^2}{\sum_i w_i^2}

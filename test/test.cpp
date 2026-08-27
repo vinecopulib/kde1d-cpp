@@ -434,6 +434,120 @@ TEST_CASE("discrete CDF stays within the unit interval", "[discrete]")
   CHECK(discrete.cdf(Eigen::VectorXd::Constant(1, 8.0))(0) == 1.0);
 }
 
+TEST_CASE("discrete bounds describe integer support", "[discrete][boundary]")
+{
+  Eigen::VectorXd observations(200);
+  for (Eigen::Index i = 0; i < observations.size(); ++i)
+    observations(i) = static_cast<double>(i % 4);
+
+  Kde1d bounded(0.0, 3.0, "discrete", 1.0, NAN, 2, 100, true);
+  bounded.fit(observations);
+  const Eigen::VectorXd grid = bounded.get_grid_points();
+  CHECK(grid(0) == Approx(-0.5));
+  CHECK(grid(grid.size() - 1) == Approx(3.5));
+  CHECK((grid.tail(grid.size() - 1) - grid.head(grid.size() - 1))
+          .minCoeff() > 0.0);
+
+  const Eigen::VectorXd levels = Eigen::VectorXd::LinSpaced(4, 0.0, 3.0);
+  CHECK(bounded.pdf(levels).sum() == Approx(1.0));
+  CHECK(bounded.cdf(Eigen::VectorXd::Constant(1, -0.1))(0) == 0.0);
+  CHECK(bounded.cdf(Eigen::VectorXd::Constant(1, 3.0))(0) == 1.0);
+  Eigen::VectorXd endpoints(2);
+  endpoints << 0.0, 1.0;
+  CHECK(bounded.quantile(endpoints)(0) == 0.0);
+  CHECK(bounded.quantile(endpoints)(1) == 3.0);
+
+  Kde1d left_bounded(0.0, NAN, "discrete", 1.0, NAN, 2, 100);
+  left_bounded.fit(observations);
+  const Eigen::VectorXd left_grid = left_bounded.get_grid_points();
+  CHECK(left_grid(0) == Approx(-0.5));
+  CHECK((left_grid.tail(left_grid.size() - 1) -
+         left_grid.head(left_grid.size() - 1))
+          .minCoeff() > 0.0);
+  const double left_upper = std::ceil(left_grid(left_grid.size() - 1));
+  const Eigen::VectorXd left_levels = Eigen::VectorXd::LinSpaced(
+    static_cast<size_t>(left_upper + 1.0), 0.0, left_upper);
+  CHECK(left_bounded.pdf(left_levels).sum() == Approx(1.0));
+
+  Kde1d right_bounded(NAN, 3.0, "discrete", 1.0, NAN, 2, 100);
+  right_bounded.fit(observations);
+  const Eigen::VectorXd right_grid = right_bounded.get_grid_points();
+  CHECK(right_grid(right_grid.size() - 1) == Approx(3.5));
+  CHECK((right_grid.tail(right_grid.size() - 1) -
+         right_grid.head(right_grid.size() - 1))
+          .minCoeff() > 0.0);
+  const double right_lower = std::floor(right_grid(0));
+  const Eigen::VectorXd right_levels = Eigen::VectorXd::LinSpaced(
+    static_cast<size_t>(3.0 - right_lower + 1.0), right_lower, 3.0);
+  CHECK(right_bounded.pdf(right_levels).sum() == Approx(1.0));
+  CHECK(right_bounded.pdf(Eigen::VectorXd::Constant(1, 4.0))(0) == 0.0);
+
+  Kde1d unbounded(NAN, NAN, "discrete");
+  unbounded.fit(observations);
+  const Eigen::VectorXd unbounded_grid = unbounded.get_grid_points();
+  const double unbounded_lower = std::floor(unbounded_grid(0));
+  const double unbounded_upper =
+    std::ceil(unbounded_grid(unbounded_grid.size() - 1));
+  const Eigen::VectorXd unbounded_levels = Eigen::VectorXd::LinSpaced(
+    static_cast<size_t>(unbounded_upper - unbounded_lower + 1.0),
+    unbounded_lower,
+    unbounded_upper);
+  CHECK(unbounded.pdf(unbounded_levels).sum() == Approx(1.0));
+  CHECK(unbounded.quantile(Eigen::VectorXd::Constant(1, 0.0))(0) ==
+        unbounded_lower);
+
+  const Eigen::VectorXd signed_observations = observations.array() - 2.0;
+  Kde1d signed_bounded(-2.0, 1.0, "discrete", 1.0, NAN, 2, 100);
+  signed_bounded.fit(signed_observations);
+  const Eigen::VectorXd signed_grid = signed_bounded.get_grid_points();
+  CHECK(signed_grid(0) == Approx(-2.5));
+  CHECK(signed_grid(signed_grid.size() - 1) == Approx(1.5));
+  const Eigen::VectorXd signed_levels =
+    Eigen::VectorXd::LinSpaced(4, -2.0, 1.0);
+  CHECK(signed_bounded.pdf(signed_levels).sum() == Approx(1.0));
+  CHECK(signed_bounded.pdf(Eigen::VectorXd::Constant(1, -3.0))(0) == 0.0);
+  CHECK(signed_bounded.pdf(Eigen::VectorXd::Constant(1, 2.0))(0) == 0.0);
+
+  Kde1d singleton(0.0, 0.0, "discrete");
+  singleton.fit(Eigen::VectorXd::Zero(40));
+  CHECK(singleton.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == 1.0);
+  CHECK(singleton.get_grid_points()(0) == Approx(-0.5));
+  CHECK(singleton.get_grid_points()(singleton.get_actual_grid_size() - 1) ==
+        Approx(0.5));
+}
+
+TEST_CASE("bounded discrete fits use adaptive boundary experts",
+          "[discrete][boundary-expert]")
+{
+  Eigen::VectorXd observations(200);
+  for (Eigen::Index i = 0; i < observations.size(); ++i)
+    observations(i) = static_cast<double>(i % 4);
+
+  Kde1d repaired(0.0, 3.0, "discrete", 1.0, NAN, 2, 100, true);
+  repaired.fit(observations);
+  Kde1d bulk(0.0, 3.0, "discrete", 1.0, NAN, 2, 100, false);
+  bulk.fit(observations);
+
+  CHECK_FALSE(repaired.get_values().isApprox(bulk.get_values(), 1e-8));
+  CHECK(repaired.get_values().array().isFinite().all());
+  CHECK(repaired.get_values().minCoeff() >= 0.0);
+}
+
+TEST_CASE("discrete inputs are integers", "[discrete][input-checks]")
+{
+  CHECK_NOTHROW(Kde1d(-3.0, -1.0, "discrete"));
+  CHECK_THROWS(Kde1d(0.5, NAN, "discrete"));
+  CHECK_THROWS(Kde1d(NAN, 3.5, "discrete"));
+
+  Kde1d fit(NAN, NAN, "discrete");
+  Eigen::VectorXd fractional(2);
+  fractional << 0.0, 1.5;
+  CHECK_THROWS(fit.fit(fractional));
+  Eigen::VectorXd infinite(2);
+  infinite << 0.0, std::numeric_limits<double>::infinity();
+  CHECK_THROWS(fit.fit(infinite));
+}
+
 TEST_CASE("likelihood summaries match fitted densities", "[likelihood]")
 {
   SECTION("weighted likelihood")
@@ -1189,4 +1303,47 @@ TEST_CASE("zero-inflated data", "[zero-inflated]")
     CHECK(
       fit.quantile(stats::simulate_uniform(100, { 5 })).cwiseEqual(0).all());
   }
+}
+
+TEST_CASE("zero-inflated bounds apply to the continuous component",
+          "[zero-inflated][boundary]")
+{
+  Eigen::VectorXd positive = Eigen::VectorXd::Zero(200);
+  positive.tail(160) = Eigen::VectorXd::LinSpaced(160, 1.01, 1.99);
+
+  Kde1d repaired(1.0, 2.0, "zero-inflated", 1.0, NAN, 2, 100, true);
+  CHECK_NOTHROW(repaired.fit(positive));
+  CHECK(repaired.get_prob0() == Approx(0.2));
+  CHECK(repaired.get_grid_points()(0) == Approx(1.0));
+  CHECK(repaired.get_grid_points()(repaired.get_actual_grid_size() - 1) ==
+        Approx(2.0));
+  CHECK(repaired.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(repaired.pdf(Eigen::VectorXd::Constant(1, 0.5))(0) == 0.0);
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, -0.1))(0) == 0.0);
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(repaired.cdf(Eigen::VectorXd::Constant(1, 0.5))(0) == Approx(0.2));
+
+  Kde1d bulk(1.0, 2.0, "zero-inflated", 1.0, NAN, 2, 100, false);
+  bulk.fit(positive);
+  CHECK_FALSE(repaired.get_values().isApprox(bulk.get_values(), 1e-8));
+
+  Eigen::VectorXd negative = Eigen::VectorXd::Zero(200);
+  negative.tail(160) = Eigen::VectorXd::LinSpaced(160, -2.99, -2.01);
+  Kde1d negative_fit(-3.0, -2.0, "zero-inflated", 1.0, NAN, 2, 100);
+  CHECK_NOTHROW(negative_fit.fit(negative));
+  CHECK(negative_fit.get_grid_points()(0) == Approx(-3.0));
+  CHECK(negative_fit.get_grid_points()(negative_fit.get_actual_grid_size() -
+                                       1) == Approx(-2.0));
+  CHECK(negative_fit.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == Approx(0.2));
+  CHECK(negative_fit.pdf(Eigen::VectorXd::Constant(1, -1.5))(0) == 0.0);
+
+  Eigen::VectorXd invalid(3);
+  invalid << 0.0, 0.5, 1.5;
+  Kde1d invalid_fit(1.0, 2.0, "zero-inflated");
+  CHECK_THROWS(invalid_fit.fit(invalid));
+
+  Kde1d point_mass(1.0, 2.0, "zero-inflated");
+  CHECK_NOTHROW(point_mass.fit(Eigen::VectorXd::Zero(40)));
+  CHECK(point_mass.get_prob0() == 1.0);
+  CHECK(point_mass.pdf(Eigen::VectorXd::Constant(1, 0.0))(0) == 1.0);
 }
