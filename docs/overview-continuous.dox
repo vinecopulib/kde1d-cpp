@@ -1,4 +1,114 @@
-/** @page overview-continuous Continuous Distributions
+/** @page overview-continuous Continuous distributions
 
+Continuous fits combine a transformed local-likelihood bulk estimator with an
+optional finite-endpoint repair. The public `degree`, `bandwidth`, and
+`multiplier` arguments retain their usual meaning for the bulk fit. Boundary
+repair is enabled by default and can be disabled with `boundary_repair=false`.
+
+@section continuous-bulk Bulk estimator and support transforms
+
+With no finite support endpoint, data are fitted on their original scale. If
+both endpoints @f$a<b@f$ are finite, the bulk fit uses a lightly regularized
+probit transform. Writing @f$R=b-a@f$,
+
+@f[
+z(x)=\Phi^{-1}\left(\frac{x-a+5\times10^{-5}R}{1.0001R}\right).
+@f]
+
+If exactly one endpoint is finite, let @f$d(x)@f$ denote distance from it.
+The scale @f$s@f$ is the weighted median of the observed distances, with a
+maximum-distance and unit fallback for degenerate samples, and
+@f$\epsilon=10^{-5}s@f$. The one-sided transform is an endpoint-anchored,
+scaled member of the Box-Cox family with power parameter @f$\lambda=1/4@f$:
+
+@f[
+z(x)=4\left[\left\{\frac{\epsilon+d(x)}{s}\right\}^{1/4}
+             -\left(\frac{\epsilon}{s}\right)^{1/4}\right],
+\qquad
+\left|\frac{dz}{dx}\right|
+=\frac{1}{s}\left\{\frac{\epsilon+d(x)}{s}\right\}^{-3/4}.
+@f]
+
+This Box-Cox transform and its Jacobian are scale equivariant. The small
+offset keeps the transformed endpoint finite. Density values are transformed
+back to the original scale and normalized on the interpolation grid.
+
+An explicitly supplied `bandwidth` is interpreted on the transformed scale.
+`get_bandwidth()` reports that bulk bandwidth before `multiplier` is applied;
+it does not report an endpoint-expert bandwidth.
+
+@section continuous-repair Boundary repair
+
+`boundary_repair=true` makes each known finite endpoint eligible for repair;
+it does not force an expert to be used. Repair is considered only for
+continuous samples with at least 16 cleaned observations and effective sample
+size
+
+@f[
+n_e=\frac{(\sum_i w_i)^2}{\sum_i w_i^2}
+@f]
+
+of at least 16. Each endpoint is then classified independently from ordered
+original-scale distances. The classifier estimates the lower-tail power
+@f$\beta@f$ from approximately @f$2\sqrt{n_e}@f$ effective observations. An
+unweighted endpoint is repaired when
+
+@f[
+\widehat\beta\geq0.9,
+\qquad
+\widehat\beta\left(1-\frac{1.64485}{\sqrt{k}}\right)\leq1.
+@f]
+
+Weighted fits use effective counts and the more conservative lower threshold
+0.975. Invalid, vanishing, exploding, or statistically ambiguous endpoint
+behavior retains the bulk fit. Setting `boundary_repair=false` skips the
+classifier and all expert calculations.
+
+For a selected endpoint, the expert is a Gaussian local-linear
+equivalent-kernel estimate on the original scale. It uses an automatically
+selected bandwidth. On two-sided support the selector uses
+all positive-weight observations; on
+one-sided support it uses the closest 75% by row count. Public case weights
+enter the expert estimand and bandwidth selector. A manual bulk `bandwidth`
+does not replace this expert bandwidth, while `multiplier` scales both.
+
+The equivalent kernel is expressed as a pointwise combination of an ordinary
+Gaussian KDE and its first derivative. These two convolutions are
+evaluated on a 256-bin FFT grid. Invalid or nonpositive local-polynomial values
+are set to zero before fusion.
+
+@section continuous-fusion Fusion and normalization
+
+Let @f$F_B@f$ be the normalized bulk CDF and
+
+@f[
+q=\min(1/4,n_e^{-1/2}),
+\qquad
+g(p)=\{1-\min(1,p/q)^2\}^2.
+@f]
+
+For selected lower and upper endpoints, the biweight fusion weights are
+@f$w_L(x)=g\{F_B(x)\}@f$ and @f$w_U(x)=g\{1-F_B(x)\}@f$; a missing or rejected
+endpoint has weight zero. The final density before numerical normalization is
+
+@f[
+\widehat f(x)=w_L(x)\widehat f_L(x)
++\{1-w_L(x)-w_U(x)\}\widehat f_B(x)
++w_U(x)\widehat f_U(x).
+@f]
+
+Because @f$q\leq1/4@f$, the lower and upper regions do not overlap. The fused
+values are clamped at zero and the existing interpolation-grid normalization
+constructs a proper density.
+
+@section continuous-edf Effective degrees of freedom
+
+The reported EDF extends the existing conditional influence-trace
+approximation. Bulk and expert diagonal influence numerators are fused with
+the same weights as their densities, and their ratio gives the local
+influence. The trace conditions on selected bandwidths, endpoint
+classifications, CDF-based fusion weights, clamp states, and normalization;
+derivatives of those adaptive choices are intentionally omitted. Pure-bulk
+fits therefore retain the previous EDF calculation exactly.
 
 */

@@ -16,7 +16,13 @@ enum class VarType
   zero_inflated
 };
 
-//! Local-polynomial density estimation in 1-d.
+//! Local-polynomial density estimation in one dimension.
+//!
+//! Continuous fits use a transformed local-likelihood estimate as their bulk
+//! component. When `boundary_repair` is enabled, finite support endpoints may
+//! additionally use a nonnegative local-linear boundary kernel. See
+//! @ref overview-continuous for the transforms,
+//! endpoint classifier, bandwidths, fusion weights, and EDF approximation.
 class Kde1d
 {
 public:
@@ -27,7 +33,8 @@ public:
         double multiplier = 1.0,
         double bandwidth = NAN,
         size_t degree = 2,
-        size_t grid_size = 400);
+        size_t grid_size = 400,
+        bool boundary_repair = true);
 
   Kde1d(double xmin = NAN,
         double xmax = NAN,
@@ -35,7 +42,8 @@ public:
         double multiplier = 1.0,
         double bandwidth = NAN,
         size_t degree = 2,
-        size_t grid_size = 400);
+        size_t grid_size = 400,
+        bool boundary_repair = true);
 
   Kde1d(const interp::InterpolationGrid& grid,
         double xmin,
@@ -82,9 +90,10 @@ public:
   double get_prob0() const { return prob0_; }
   //! @return the bandwidth multiplier supplied at construction.
   double get_multiplier() const { return multiplier_; }
-  //! @return the bandwidth used by the most recent `fit()`, before the
-  //!   multiplier is applied. Equals the bandwidth supplied at construction
-  //!   when one was, and is `NaN` when none was and `fit()` has not run.
+  //! @return the transformed-scale bulk bandwidth used by the most recent
+  //!   `fit()`, before the multiplier is applied. Equals the bandwidth
+  //!   supplied at construction when one was, and is `NaN` when none was and
+  //!   `fit()` has not run. Boundary experts select a separate bandwidth.
   double get_bandwidth() const { return bandwidth_; }
   //! @return the polynomial degree used by the local-likelihood
   //!   estimator (0, 1, or 2).
@@ -92,6 +101,8 @@ public:
   //! @return the requested number of grid points (the value passed
   //!   to the constructor).
   size_t get_grid_size() const { return grid_size_; }
+  //! @return whether boundary experts are eligible at finite endpoints.
+  bool get_boundary_repair() const { return boundary_repair_; }
   //! @return the actual number of grid points after fitting (which
   //!   may differ slightly from `get_grid_size()` due to
   //!   boundary-snapping in `finalize_grid()`).
@@ -113,7 +124,9 @@ public:
        << "xmin=" << xmin_ << ", xmax=" << xmax_ << ", type='"
        << this->as_str(type_) << "'"
        << ", bandwidth=" << bandwidth_ << ", multiplier=" << multiplier_
-       << ", degree=" << degree_ << ")";
+       << ", degree=" << degree_
+       << ", boundary_repair=" << (boundary_repair_ ? "true" : "false")
+       << ")";
     return ss.str();
   }
 
@@ -121,6 +134,39 @@ protected:
   void set_interpolation_grid(const interp::InterpolationGrid& grid);
 
 private:
+  struct BoundaryComponent
+  {
+    Eigen::VectorXd density;
+    Eigen::VectorXd influence_num;
+  };
+
+  enum class EndpointSide
+  {
+    lower,
+    upper
+  };
+
+  struct EndpointData
+  {
+    Eigen::VectorXd dist;
+    Eigen::VectorXd weights;
+    bool finite{ false };
+  };
+
+  struct BoundaryConvolutions
+  {
+    Eigen::VectorXd f0;
+    Eigen::VectorXd f1;
+    Eigen::VectorXd influence_weight;
+    double upper{ 0.0 };
+  };
+
+  struct BoundaryKernelCoefficients
+  {
+    double c0;
+    double c1;
+  };
+
   // data members
   interp::InterpolationGrid grid_;
   double xmin_;
@@ -137,11 +183,14 @@ private:
   double bandwidth_{ NAN };
   size_t degree_{ 2 };
   size_t grid_size_;
+  bool boundary_repair_{ true };
   double prob0_{ 0.0 };
   double loglik_{ NAN };
   double edf_{ NAN };
-  // Regularizes one-sided log transforms in the units of the fitted data.
+  // Regularizes one-sided power transforms in the units of the fitted data.
   double boundary_offset_{ NAN };
+  // Makes one-sided transforms dimensionless and scale equivariant.
+  double boundary_scale_{ 1.0 };
   static constexpr double K0_ = 0.3989425;
 
   // private methods
@@ -183,6 +232,34 @@ private:
                           double multiplier,
                           size_t degree,
                           const Eigen::VectorXd& weights) const;
+  bool is_finite_endpoint(const Eigen::VectorXd& dist,
+                          const Eigen::VectorXd& weights) const;
+  EndpointData prepare_endpoint(const Eigen::VectorXd& x,
+                                const Eigen::VectorXd& weights,
+                                EndpointSide side) const;
+  double select_boundary_bandwidth(const EndpointData& endpoint,
+                                   double fraction) const;
+  BoundaryConvolutions compute_boundary_convolutions(
+    const Eigen::VectorXd& dist,
+    const Eigen::VectorXd& weights,
+    double bandwidth,
+    double eval_upper) const;
+  BoundaryKernelCoefficients boundary_kernel_coefficients(double a) const;
+  BoundaryComponent fit_boundary_component(
+    const Eigen::VectorXd& dist,
+    const Eigen::VectorXd& eval_dist,
+    double bandwidth,
+    const Eigen::VectorXd& weights) const;
+  void fuse_boundary_components(const Eigen::VectorXd& grid,
+                                const Eigen::VectorXd& w_lower,
+                                const Eigen::VectorXd& w_upper,
+                                const BoundaryComponent& lower,
+                                const BoundaryComponent& upper,
+                                Eigen::VectorXd& influences);
+  void repair_boundaries(const Eigen::VectorXd& x,
+                         const Eigen::VectorXd& grid,
+                         Eigen::VectorXd& influences,
+                         const Eigen::VectorXd& weights);
 
   std::string as_str(VarType type) const;
   VarType as_enum(std::string type) const;
@@ -202,13 +279,16 @@ private:
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
+//! @param boundary_repair whether finite endpoints are eligible for boundary
+//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     VarType type,
                     double multiplier,
                     double bandwidth,
                     size_t degree,
-                    size_t grid_size)
+                    size_t grid_size,
+                    bool boundary_repair)
   : xmin_(xmin)
   , xmax_(xmax)
   , type_(type)
@@ -217,6 +297,7 @@ inline Kde1d::Kde1d(double xmin,
   , bandwidth_(bandwidth)
   , degree_(degree)
   , grid_size_(grid_size)
+  , boundary_repair_(boundary_repair)
 {
   this->check_xmin_xmax(xmin, xmax);
   if (multiplier <= 0.0) {
@@ -276,20 +357,24 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 //! selection).
 //! @param degree degree of the local polynomial.
 //! @param grid_size number of grid points for the interpolation grid.
+//! @param boundary_repair whether finite endpoints are eligible for boundary
+//!   experts. A data-driven endpoint classifier can still retain the bulk fit.
 inline Kde1d::Kde1d(double xmin,
                     double xmax,
                     std::string type,
                     double multiplier,
                     double bandwidth,
                     size_t degree,
-                    size_t grid_size)
+                    size_t grid_size,
+                    bool boundary_repair)
   : Kde1d(xmin,
           xmax,
           this->as_enum(type),
           multiplier,
           bandwidth,
           degree,
-          grid_size)
+          grid_size,
+          boundary_repair)
 {
 }
 
@@ -327,6 +412,14 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
 
+  const bool use_boundary_repair = boundary_repair_ &&
+                                   type_ == VarType::continuous &&
+                                   xx.size() >= 16 &&
+                                   (!std::isnan(xmin_) || !std::isnan(xmax_));
+  Eigen::VectorXd boundary_observations;
+  if (use_boundary_repair)
+    boundary_observations = xx;
+
   if (w.size() > 0) {
     w /= w.mean();
   }
@@ -363,16 +456,16 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
     else
       distances = xx.array() - xmin_;
     if (w.size() == 0) {
-      boundary_offset_ = 1e-5 * stats::median(distances);
+      boundary_scale_ = stats::median(distances);
     } else {
-      boundary_offset_ =
-        1e-5 * stats::quantile(
-                 distances, Eigen::VectorXd::Constant(1, 0.5), w)(0);
+      boundary_scale_ = stats::quantile(
+        distances, Eigen::VectorXd::Constant(1, 0.5), w)(0);
     }
-    if (!(boundary_offset_ > 0.0))
-      boundary_offset_ = 1e-5 * distances.maxCoeff();
-    if (!(boundary_offset_ > 0.0))
-      boundary_offset_ = 1e-5;
+    if (!(boundary_scale_ > 0.0))
+      boundary_scale_ = distances.maxCoeff();
+    if (!(boundary_scale_ > 0.0))
+      boundary_scale_ = 1.0;
+    boundary_offset_ = 1e-5 * boundary_scale_;
   }
 
   xx = boundary_transform(xx);
@@ -390,9 +483,15 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   // order grid points from left to right
   grid_points = finalize_grid(grid_points);
 
+  Eigen::VectorXd influences = fitted.col(1);
+  if (std::isnan(xmin_) && !std::isnan(xmax_))
+    influences.reverseInPlace();
+
   // construct interpolation grid
   // (3 iterations for normalization to a proper density)
   grid_ = interp::InterpolationGrid(grid_points, values, 3);
+  if (use_boundary_repair)
+    repair_boundaries(boundary_observations, grid_points, influences, w);
 
   // calculate log-likelihood of final estimate
   xx = boundary_transform(xx, true);
@@ -413,9 +512,7 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   }
 
   // calculate effective degrees of freedom
-  Eigen::VectorXd influences = fitted.col(1).cwiseMin(3.0).cwiseMax(0);
-  if (std::isnan(xmin_) && !std::isnan(xmax_))
-    influences.reverseInPlace();
+  influences = influences.cwiseMin(3.0).cwiseMax(0);
   interp::InterpolationGrid infl_grid(grid_points, influences, 0);
   influences = infl_grid.interpolate(xx).array();
   edf_ = influences.sum() + static_cast<double>(prob0_ > 0);
@@ -779,11 +876,17 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       x_new = (x.array() - xmin_ + 5e-5 * rng) / (1.0001 * rng);
       x_new = stats::qnorm(x_new);
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> log transform
-      x_new = (boundary_offset_ + x.array() - xmin_).log();
+      // left boundary -> regularized fourth-root transform
+      x_new = 4.0 * (((boundary_offset_ + x.array() - xmin_) /
+                      boundary_scale_)
+                       .pow(0.25) -
+                     std::pow(boundary_offset_ / boundary_scale_, 0.25));
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> negative log transform
-      x_new = (boundary_offset_ + xmax_ - x.array()).log();
+      // right boundary -> reflected regularized fourth-root transform
+      x_new = 4.0 * (((boundary_offset_ + xmax_ - x.array()) /
+                      boundary_scale_)
+                       .pow(0.25) -
+                     std::pow(boundary_offset_ / boundary_scale_, 0.25));
     } else {
       // no boundary -> no transform
     }
@@ -793,11 +896,19 @@ Kde1d::boundary_transform(const Eigen::VectorXd& x, bool inverse)
       auto rng = xmax_ - xmin_;
       x_new = stats::pnorm(x).array() * 1.0001 * rng + xmin_ - 5e-5 * rng;
     } else if (!std::isnan(xmin_)) {
-      // left boundary -> log transform
-      x_new = x.array().exp() + xmin_ - boundary_offset_;
+      // left boundary -> inverse regularized fourth-root transform
+      x_new = boundary_scale_ *
+                (x.array() / 4.0 +
+                 std::pow(boundary_offset_ / boundary_scale_, 0.25))
+                  .pow(4) +
+              xmin_ - boundary_offset_;
     } else if (!std::isnan(xmax_)) {
-      // right boundary -> negative log transform
-      x_new = -(x.array().exp() - xmax_ - boundary_offset_);
+      // right boundary -> inverse reflected regularized fourth-root transform
+      x_new = xmax_ + boundary_offset_ -
+              boundary_scale_ *
+                (x.array() / 4.0 +
+                 std::pow(boundary_offset_ / boundary_scale_, 0.25))
+                  .pow(4);
     } else {
       // no boundary -> no transform
     }
@@ -824,14 +935,18 @@ Kde1d::boundary_correct(const Eigen::VectorXd& x, const Eigen::VectorXd& fhat)
     auto rng = xmax_ - xmin_;
     corr_term = (x.array() - xmin_ + 5e-5 * rng) / (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = stats::dnorm(stats::qnorm(corr_term));
-    corr_term /= (xmax_ - xmin_ + 1e-4 * rng);
+    corr_term *= (xmax_ - xmin_ + 1e-4 * rng);
     corr_term = 1.0 / corr_term.array();
   } else if (!std::isnan(xmin_)) {
-    // left boundary -> log transform
-    corr_term = 1.0 / (boundary_offset_ + x.array() - xmin_);
+    // left boundary -> fourth-root-transform Jacobian
+    corr_term = ((boundary_offset_ + x.array() - xmin_) / boundary_scale_)
+                  .pow(-0.75) /
+                boundary_scale_;
   } else if (!std::isnan(xmax_)) {
-    // right boundary -> negative log transform
-    corr_term = 1.0 / (boundary_offset_ + xmax_ - x.array());
+    // right boundary -> reflected fourth-root-transform Jacobian
+    corr_term = ((boundary_offset_ + xmax_ - x.array()) / boundary_scale_)
+                  .pow(-0.75) /
+                boundary_scale_;
   } else {
     // no boundary -> no transform
     corr_term.fill(1.0);
@@ -897,11 +1012,403 @@ Kde1d::finalize_grid(Eigen::VectorXd& grid_points)
   return grid_points;
 }
 
+//! Classifies a support endpoint from its ordered distances @f$d@f$ to the
+//! endpoint. For @f$k = \min(n-1, \lceil 2\sqrt n \rceil)@f$, the lower-tail
+//! index is
+//! @f[
+//! \widehat\beta = \frac{k}{\sum_{i=1}^k
+//!   \log\{d_{(k+1)} / d_{(i)}\}}.
+//! @f]
+//! It is treated as finite when @f$\widehat\beta \geq 0.9@f$ and its one-sided
+//! 95% lower confidence bound does not exceed one. The weighted threshold is
+//! 0.975 to avoid unstable repair of exploding targets. Ambiguous and
+//! numerically degenerate cases retain the bulk fit.
+//! With nonconstant case weights, their effective sample size replaces @f$n@f$
+//! and the lower tail is defined by cumulative normalized weight.
+//! @param dist ordered distances of the observations from the support endpoint.
+//! @param weights correspondingly ordered case weights with mean one.
+//! @return whether the endpoint is confidently classified as finite.
+inline bool
+Kde1d::is_finite_endpoint(const Eigen::VectorXd& dist,
+                          const Eigen::VectorXd& weights) const
+{
+  const double n_eff = weights.sum() * weights.sum() / weights.squaredNorm();
+  if (!(n_eff > 1.0) || !std::isfinite(n_eff))
+    return false;
+
+  // Scale weights to effective counts and locate the (k+1)th weighted order
+  // statistic, where k = min(n_eff, ceil(2 sqrt(n_eff))).
+  const Eigen::VectorXd counts = weights * n_eff / weights.sum();
+  const double target =
+    std::min(std::nextafter(n_eff, 0.0), std::ceil(2.0 * std::sqrt(n_eff)));
+  Eigen::Index k1 = 0;
+  double cumulative = counts(0);
+  while (cumulative <= target && k1 + 1 < dist.size())
+    cumulative += counts(++k1);
+  const double dist_k1 = dist(k1);
+  if (!(dist_k1 > 0.0) || !std::isfinite(dist_k1))
+    return false;
+
+  // tail_mass and denom define the weighted lower-tail index beta.
+  double tail_mass = 0.0;
+  double denom = 0.0;
+  const double dist_min = std::numeric_limits<double>::epsilon() * dist_k1;
+  for (Eigen::Index i = 0; i < k1; ++i) {
+    tail_mass += counts(i);
+    denom += counts(i) * std::log(dist_k1 / std::max(dist(i), dist_min));
+  }
+  if (!(tail_mass > 0.0) || !(denom > 0.0) || !std::isfinite(denom))
+    return false;
+
+  const double beta = tail_mass / denom;
+  // 1.64485 is the 95% standard-normal quantile used by the R selector.
+  const double beta_min =
+    weights.minCoeff() == weights.maxCoeff() ? 0.9 : 0.975;
+  return beta >= beta_min &&
+         beta * (1.0 - 1.6448536269514722 / std::sqrt(tail_mass)) <= 1.0;
+}
+
+//! Constructs sorted distances and case weights for one support endpoint, then
+//! classifies its local density behavior.
+//! @param x observations on the original scale.
+//! @param weights normalized case weights with mean one.
+//! @param side endpoint from which distances are measured.
+//! @return sorted endpoint data and its finite-endpoint decision.
+inline Kde1d::EndpointData
+Kde1d::prepare_endpoint(const Eigen::VectorXd& x,
+                        const Eigen::VectorXd& weights,
+                        EndpointSide side) const
+{
+  EndpointData endpoint;
+  if (side == EndpointSide::lower)
+    endpoint.dist = x.array() - xmin_;
+  else
+    endpoint.dist = xmax_ - x.array();
+  endpoint.weights.resize(x.size());
+  const Eigen::VectorXi order = tools::get_order(endpoint.dist);
+  const Eigen::VectorXd unsorted_dist = endpoint.dist;
+  for (Eigen::Index i = 0; i < endpoint.dist.size(); ++i) {
+    endpoint.dist(i) = unsorted_dist(order(i));
+    endpoint.weights(i) = weights(order(i));
+  }
+  endpoint.finite = is_finite_endpoint(endpoint.dist, endpoint.weights);
+  return endpoint;
+}
+
+//! Selects the shared original-scale bandwidth for a boundary expert. The
+//! closest `fraction` of positive-weight observations are used by row count.
+//! @param endpoint sorted endpoint distances and case weights.
+//! @param fraction fraction of positive-weight observations used for selection.
+//! @return selected boundary bandwidth after applying the public multiplier.
+inline double
+Kde1d::select_boundary_bandwidth(const EndpointData& endpoint,
+                                 double fraction) const
+{
+  const Eigen::Index n_positive = (endpoint.weights.array() > 0.0).count();
+  Eigen::VectorXd dist(n_positive);
+  Eigen::VectorXd weights(n_positive);
+  Eigen::Index j = 0;
+  for (Eigen::Index i = 0; i < endpoint.dist.size(); ++i) {
+    if (endpoint.weights(i) > 0.0) {
+      dist(j) = endpoint.dist(i);
+      weights(j++) = endpoint.weights(i);
+    }
+  }
+  const Eigen::Index n_bw = std::min<Eigen::Index>(
+    dist.size(),
+    std::max<Eigen::Index>(
+      4,
+      static_cast<Eigen::Index>(
+        std::ceil(fraction * static_cast<double>(dist.size())))));
+  bandwidth::PluginBandwidthSelector selector(dist.head(n_bw),
+                                              weights.head(n_bw));
+  return selector.select_bandwidth(2) * multiplier_;
+}
+
+//! Computes the ordinary Gaussian KDE and its first derivative on the
+//! regular FFT grid used by a boundary component. The influence weights are
+//! the average normalized case weights in the same bins.
+//! @param dist ordered endpoint distances.
+//! @param weights correspondingly ordered normalized case weights.
+//! @param bandwidth boundary-component bandwidth.
+//! @param eval_upper largest endpoint distance that will be evaluated.
+//! @return FFT convolutions, influence weights, and FFT-grid upper limit.
+inline Kde1d::BoundaryConvolutions
+Kde1d::compute_boundary_convolutions(const Eigen::VectorXd& dist,
+                                     const Eigen::VectorXd& weights,
+                                     double bandwidth,
+                                     double eval_upper) const
+{
+  BoundaryConvolutions convolutions;
+  convolutions.upper = eval_upper + 6.0 * bandwidth;
+  const double* last = std::upper_bound(
+    dist.data(), dist.data() + dist.size(), convolutions.upper);
+  const Eigen::Index n_fft = last - dist.data();
+  const double fft_weight = weights.head(n_fft).sum();
+  if (n_fft == 0 || !(fft_weight > 0.0))
+    return convolutions;
+
+  // This resolution kept the worst paired ISE perturbation below 0.7%.
+  const size_t num_bins = 256;
+  fft::KdeFFT kde_fft(dist.head(n_fft),
+                      bandwidth,
+                      0.0,
+                      convolutions.upper,
+                      weights.head(n_fft),
+                      num_bins);
+  const double scale = fft_weight / weights.sum();
+  convolutions.f0 = scale * kde_fft.kde_drv(0);
+  convolutions.f1 = scale * kde_fft.kde_drv(1);
+  convolutions.influence_weight = Eigen::VectorXd::Ones(num_bins + 1);
+  if (weights.minCoeff() != weights.maxCoeff()) {
+    const Eigen::VectorXd count = tools::linbin(dist.head(n_fft),
+                                                0.0,
+                                                convolutions.upper,
+                                                num_bins,
+                                                Eigen::VectorXd::Ones(n_fft));
+    convolutions.influence_weight =
+      (count.array() == 0.0)
+        .select(Eigen::VectorXd::Zero(count.size()),
+                weights.head(n_fft).mean() *
+                  kde_fft.get_bin_counts().cwiseQuotient(count));
+  }
+  return convolutions;
+}
+
+//! Computes the first inverse-moment row for the local-linear Gaussian
+//! boundary kernel at standardized endpoint distance @f$a@f$.
+//! @param a endpoint distance divided by bandwidth.
+//! @return coefficients @f$c_0,c_1@f$.
+inline Kde1d::BoundaryKernelCoefficients
+Kde1d::boundary_kernel_coefficients(double a) const
+{
+  const double phi = K0_ * std::exp(-0.5 * a * a);
+  const double mu0 = 0.5 * std::erfc(-a * 0.7071067811865475);
+  const double mu1 = -phi;
+  const double mu2 = mu0 - a * phi;
+  const double denom = mu0 * mu2 - mu1 * mu1;
+  return { mu2 / denom, -mu1 / denom };
+}
+
+//! Fits a Gaussian local-linear equivalent kernel from sample distances
+//! @f$d@f$ to endpoint-distance grid @f$t@f$. For bandwidth @f$h@f$,
+//! truncated Gaussian moments @f$\mu_r(a)@f$, and
+//! @f$M(a)=[\mu_{j+k}(a)]_{j,k=0}^1@f$,
+//! @f[
+//! \begin{align*}
+//! a &= t/h, & u_i &= (t-d_i)/h, \\[2pt]
+//! \widehat f_E(t;h)
+//!   &= \frac{1}{nh}\sum_{i=1}^n w_i\phi(u_i)\,
+//!      e_0^\mathsf{T}M(a)^{-1}(1,u_i)^\mathsf{T}.
+//! \end{align*}
+//! @f]
+//! Writing @f$f^{(1)}@f$ for the first derivative of the ordinary Gaussian KDE
+//! and @f$(c_0,c_1)=e_0^\mathsf{T}M(a)^{-1}@f$, the same estimator is
+//! @f[
+//! \begin{align*}
+//! \widehat f_E(t;h) &= c_0f(t)-hc_1f^{(1)}(t).
+//! \end{align*}
+//! @f]
+//! This identity evaluates the two convolutions by FFT. The returned influence
+//! numerator is the diagonal contribution with normalized case weights
+//! @f$w_i@f$.
+//! @param dist ordered distances of the observations from the support endpoint.
+//! @param eval_dist endpoint distances at which to evaluate the component.
+//! @param bandwidth bandwidth of the equivalent kernel.
+//! @param weights correspondingly ordered case weights with mean one.
+//! @return the density and influence numerator on `eval_dist`.
+inline Kde1d::BoundaryComponent
+Kde1d::fit_boundary_component(const Eigen::VectorXd& dist,
+                              const Eigen::VectorXd& eval_dist,
+                              double bandwidth,
+                              const Eigen::VectorXd& weights) const
+{
+  const double h = bandwidth;
+  if (!(h > 0.0) || !std::isfinite(h))
+    return {};
+
+  BoundaryComponent fit{ Eigen::VectorXd::Zero(eval_dist.size()),
+                         Eigen::VectorXd::Zero(eval_dist.size()) };
+  if (eval_dist.size() == 0)
+    return fit;
+
+  const BoundaryConvolutions convolutions = compute_boundary_convolutions(
+    dist, weights, h, eval_dist(eval_dist.size() - 1));
+  if (convolutions.f0.size() == 0)
+    return fit;
+
+  const size_t num_bins = convolutions.f0.size() - 1;
+  for (Eigen::Index j = 0; j < eval_dist.size(); ++j) {
+    const double a = eval_dist(j) / h;
+    const BoundaryKernelCoefficients c = boundary_kernel_coefficients(a);
+    const double position =
+      eval_dist(j) * static_cast<double>(num_bins) / convolutions.upper;
+    const size_t bin = std::min(static_cast<size_t>(position), num_bins - 1);
+    const double fraction = position - static_cast<double>(bin);
+    auto interpolate = [&](const Eigen::VectorXd& values) {
+      return (1.0 - fraction) * values(bin) + fraction * values(bin + 1);
+    };
+    fit.density(j) = c.c0 * interpolate(convolutions.f0) -
+                     h * c.c1 * interpolate(convolutions.f1);
+    fit.influence_num(j) =
+      K0_ * c.c0 * interpolate(convolutions.influence_weight) /
+      (static_cast<double>(dist.size()) * h);
+  }
+
+  // Remove unstable local-polynomial values.
+  for (Eigen::Index j = 0; j < fit.density.size(); ++j) {
+    if (!(fit.density(j) > 0.0) || !std::isfinite(fit.density(j)) ||
+        !std::isfinite(fit.influence_num(j))) {
+      fit.density(j) = 0.0;
+      fit.influence_num(j) = 0.0;
+    }
+  }
+  return fit;
+}
+
+//! Fuses the bulk density and influence numerators with available lower and
+//! upper boundary components. Upper components are stored by increasing
+//! distance from the upper endpoint and are therefore indexed in reverse.
+//! @param grid increasing evaluation grid on the original scale.
+//! @param w_lower lower-endpoint fusion weights on `grid`.
+//! @param w_upper upper-endpoint fusion weights on `grid`.
+//! @param lower lower boundary component; empty means unavailable.
+//! @param upper upper boundary component; empty means unavailable.
+//! @param influences on input, bulk influences; on output, fused influences.
+inline void
+Kde1d::fuse_boundary_components(const Eigen::VectorXd& grid,
+                                const Eigen::VectorXd& w_lower,
+                                const Eigen::VectorXd& w_upper,
+                                const BoundaryComponent& lower,
+                                const BoundaryComponent& upper,
+                                Eigen::VectorXd& influences)
+{
+  const Eigen::VectorXd f_bulk = grid_.get_values();
+  Eigen::VectorXd f(grid.size());
+  Eigen::VectorXd influence_num(grid.size());
+  for (Eigen::Index j = 0; j < grid.size(); ++j) {
+    const bool use_lower =
+      w_lower(j) > 0.0 && j < lower.density.size();
+    const Eigen::Index upper_j = grid.size() - 1 - j;
+    const bool use_upper =
+      w_upper(j) > 0.0 && upper_j < upper.density.size();
+    const double w_bulk =
+      1.0 - (use_lower ? w_lower(j) : 0.0) -
+      (use_upper ? w_upper(j) : 0.0);
+    f(j) = w_bulk * f_bulk(j);
+    influence_num(j) = w_bulk * f_bulk(j) * influences(j);
+    if (use_lower) {
+      f(j) += w_lower(j) * lower.density(j);
+      influence_num(j) += w_lower(j) * lower.influence_num(j);
+    }
+    if (use_upper) {
+      f(j) += w_upper(j) * upper.density(upper_j);
+      influence_num(j) += w_upper(j) * upper.influence_num(upper_j);
+    }
+    influences(j) = f(j) > 0.0 ? influence_num(j) / f(j) : 0.0;
+  }
+  grid_ = interp::InterpolationGrid(grid, f.cwiseMax(0.0), 3);
+}
+
+//! Fuses the transformed bulk density @f$\widehat f_B@f$ with endpoint
+//! densities @f$\widehat f_L@f$ and @f$\widehat f_U@f$. Each endpoint density
+//! uses a local-linear kernel with an automatically selected bandwidth, based on
+//! all distances on bounded support and the closest
+//! 75% of positive-weight observations on one-sided support. Smooth weights
+//! @f$w_L@f$ and @f$w_U@f$ are functions of the weighted bulk CDF and shrink
+//! with effective sample size @f$n_e@f$:
+//! @f[
+//! \begin{align*}
+//! q &= \min(1/4,n_e^{-1/2}), & z(p) &= \min(1,p/q), \\[2pt]
+//! g(p) &= \{1-z(p)^2\}^2, \\[2pt]
+//! w_L &= g(F_B), & w_U &= g(1-F_B), \\[2pt]
+//! \widehat f
+//!   &= w_L\widehat f_L+(1-w_L-w_U)\widehat f_B+w_U\widehat f_U, \\[2pt]
+//! \nu &= w_L\nu_L+(1-w_L-w_U)\nu_B+w_U\nu_U, \\[2pt]
+//! \mathrm{influence} &= \nu/\widehat f.
+//! \end{align*}
+//! @f]
+//! Here @f$\nu@f$ is the influence numerator, i.e., the diagonal kernel
+//! contribution on the density scale. Only endpoints classified as finite are
+//! repaired.
+//! @param x observations on the original scale.
+//! @param grid increasing evaluation grid on the original scale.
+//! @param influences on input, bulk-fit influences on `grid`; on output,
+//!   influences of the fused estimate.
+//! @param weights normalized case weights; empty means equal weights.
+inline void
+Kde1d::repair_boundaries(const Eigen::VectorXd& x,
+                         const Eigen::VectorXd& grid,
+                         Eigen::VectorXd& influences,
+                         const Eigen::VectorXd& weights)
+{
+  const Eigen::VectorXd case_weights =
+    weights.size() > 0 ? weights : Eigen::VectorXd::Ones(x.size());
+  const double n_eff =
+    case_weights.sum() * case_weights.sum() / case_weights.squaredNorm();
+  if (n_eff < 16.0)
+    return;
+
+  EndpointData lower_endpoint;
+  EndpointData upper_endpoint;
+  if (!std::isnan(xmin_))
+    lower_endpoint = prepare_endpoint(x, case_weights, EndpointSide::lower);
+  if (!std::isnan(xmax_))
+    upper_endpoint = prepare_endpoint(x, case_weights, EndpointSide::upper);
+  if (!lower_endpoint.finite && !upper_endpoint.finite)
+    return;
+
+  // q is the shrinking probability width of each endpoint weight.
+  const double q = std::min(0.25, 1.0 / std::sqrt(n_eff));
+  auto endpoint_weight = [&](double probability) {
+    const double z = std::min(1.0, probability / q);
+    return (1.0 - z * z) * (1.0 - z * z);
+  };
+
+  // Only evaluate endpoint fits where their fusion weights are nonzero.
+  const Eigen::VectorXd bulk_cdf = grid_.integrate(grid, true);
+  Eigen::VectorXd w_l = Eigen::VectorXd::Zero(grid.size());
+  Eigen::VectorXd w_u = Eigen::VectorXd::Zero(grid.size());
+  for (Eigen::Index j = 0; j < grid.size(); ++j) {
+    if (lower_endpoint.finite)
+      w_l(j) = endpoint_weight(bulk_cdf(j));
+    if (upper_endpoint.finite)
+      w_u(j) = endpoint_weight(1.0 - bulk_cdf(j));
+  }
+  const Eigen::Index n_lower = (w_l.array() > 0.0).count();
+  const Eigen::Index n_upper = (w_u.array() > 0.0).count();
+
+  // Reflection invariance gives both endpoints the same boundary bandwidth.
+  const double bandwidth_fraction =
+    (!std::isnan(xmin_) && !std::isnan(xmax_)) ? 1.0 : 0.75;
+  const EndpointData& bandwidth_endpoint =
+    lower_endpoint.finite ? lower_endpoint : upper_endpoint;
+  const double h =
+    select_boundary_bandwidth(bandwidth_endpoint, bandwidth_fraction);
+
+  BoundaryComponent lower;
+  BoundaryComponent upper;
+  if (lower_endpoint.finite && n_lower > 0) {
+    lower = fit_boundary_component(lower_endpoint.dist,
+                                   grid.head(n_lower).array() - xmin_,
+                                   h,
+                                   lower_endpoint.weights);
+  }
+  if (upper_endpoint.finite && n_upper > 0) {
+    Eigen::VectorXd upper_eval_dist =
+      (xmax_ - grid.tail(n_upper).array()).reverse();
+    upper = fit_boundary_component(
+      upper_endpoint.dist, upper_eval_dist, h, upper_endpoint.weights);
+  }
+  if (lower.density.size() == 0 && upper.density.size() == 0)
+    return;
+  fuse_boundary_components(grid, w_l, w_u, lower, upper, influences);
+}
+
 //  Bandwidth for Kernel Density Estimation
 //' @param x vector of observations
 //' @param bandwidth bandwidth parameter, NA for automatic selection.
-//' @param multiplier bandwidth multiplieriplier.
-//' @param discrete whether a jittered estimate is computed.
+//' @param multiplier bandwidth multiplier.
 //' @param weights vector of weights for each observation (can be empty).
 //' @param degree polynomial degree.
 //' @return the selected bandwidth

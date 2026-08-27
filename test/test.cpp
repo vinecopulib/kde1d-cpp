@@ -119,10 +119,13 @@ TEST_CASE("boundary grids resolve the transformed support", "[boundary-grid]")
 TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]")
 {
   Eigen::VectorXd observations = Eigen::VectorXd::LinSpaced(500, 0.01, 5.0);
-  Kde1d left_bounded(0.0, NAN, "continuous", 1.0, 0.5);
+  Kde1d left_bounded(0.0, NAN, "continuous");
   left_bounded.fit(observations);
+  Kde1d manual(0.0, NAN, "continuous", 1.0, left_bounded.get_bandwidth());
+  manual.fit(observations);
+  CHECK(left_bounded.get_values().isApprox(manual.get_values(), 1e-12));
 
-  Kde1d right_bounded(NAN, 0.0, "continuous", 1.0, 0.5);
+  Kde1d right_bounded(NAN, 0.0, "continuous");
   right_bounded.fit(-observations);
 
   CHECK(left_bounded.get_grid_points().isApprox(
@@ -131,6 +134,214 @@ TEST_CASE("one-boundary fits are reflection equivariant", "[boundary-reflection]
     right_bounded.get_values().reverse()));
   CHECK(left_bounded.get_loglik() == Approx(right_bounded.get_loglik()));
   CHECK(left_bounded.get_edf() == Approx(right_bounded.get_edf()));
+}
+
+TEST_CASE("one-sided finite endpoints use the boundary expert",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+  Kde1d fit(0.0, NAN, "continuous");
+  fit.fit(observations);
+
+  Kde1d manual(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
+  manual.fit(observations);
+  CHECK(fit.get_values().isApprox(manual.get_values(), 1e-12));
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 0.9797951, 0.9798032, 0.9780643, 0.9448344, 0.7316556,
+    0.0077380;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(4),
+    fit.get_values()(24), fit.get_values()(49), fit.get_values()(99),
+    fit.get_values()(199);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+  CHECK(std::isfinite(fit.get_edf()));
+
+  Kde1d reflected(NAN, 0.0, "continuous");
+  reflected.fit(-observations);
+  CHECK(fit.get_grid_points().isApprox(-reflected.get_grid_points().reverse(),
+                                       1e-12));
+  CHECK(fit.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(fit.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("boundary experts can be disabled", "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+
+  Kde1d default_fit(0.0, NAN, "continuous");
+  default_fit.fit(observations);
+  Kde1d enabled(0.0, NAN, "continuous", 1.0, NAN, 2, 400, true);
+  enabled.fit(observations);
+  Kde1d disabled(0.0, NAN, "continuous", 1.0, NAN, 2, 400, false);
+  disabled.fit(observations);
+  Kde1d disabled_manual(
+    0.0, NAN, "continuous", 1.0, disabled.get_bandwidth(), 2, 400, false);
+  disabled_manual.fit(observations);
+
+  CHECK(default_fit.get_boundary_repair());
+  CHECK(enabled.get_boundary_repair());
+  CHECK_FALSE(disabled.get_boundary_repair());
+  CHECK(default_fit.get_values().isApprox(enabled.get_values(), 1e-12));
+  CHECK_FALSE(default_fit.get_values().isApprox(disabled.get_values(), 1e-6));
+  CHECK(disabled.get_values().isApprox(disabled_manual.get_values(), 1e-12));
+  CHECK(disabled.str().find("boundary_repair=false") != std::string::npos);
+}
+
+TEST_CASE("one-sided vanishing endpoints retain the bulk fit",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = probabilities.array().sqrt();
+  Kde1d fit(0.0, NAN, "continuous");
+  fit.fit(observations);
+
+  Kde1d bulk(0.0, NAN, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK(fit.get_grid_points().isApprox(bulk.get_grid_points(), 1e-12));
+  CHECK(fit.get_values().isApprox(bulk.get_values(), 1e-12));
+  CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("two-sided finite endpoints use the boundary experts",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd observations =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Kde1d manual(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
+  manual.fit(observations);
+  CHECK(fit.get_values().isApprox(manual.get_values(), 1e-12));
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 0.9993158, 0.9992803, 0.9985546, 1.0001208, 0.9985473,
+    0.9993158;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(49),
+    fit.get_values()(99), fit.get_values()(199), fit.get_values()(299),
+    fit.get_values()(400);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+  CHECK(std::isfinite(fit.get_edf()));
+
+  Kde1d scaled(-3.0, 7.0, "continuous");
+  scaled.fit(-3.0 + 10.0 * observations.array());
+  CHECK(((scaled.get_grid_points().array() + 3.0) / 10.0)
+          .matrix()
+          .isApprox(fit.get_grid_points(), 1e-12));
+  CHECK((10.0 * scaled.get_values()).isApprox(fit.get_values(), 1e-10));
+  CHECK(scaled.get_edf() == Approx(fit.get_edf()).epsilon(1e-10));
+}
+
+TEST_CASE("two-sided endpoints are classified independently",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations =
+    1.0 - (1.0 - probabilities.array()).sqrt();
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Eigen::VectorXd expected_density(6);
+  expected_density << 1.9985571, 1.9950070, 1.9824915, 0.9946390, 0.0562128,
+    0.0000020;
+  Eigen::VectorXd selected_density(6);
+  selected_density << fit.get_values()(0), fit.get_values()(49),
+    fit.get_values()(99), fit.get_values()(199), fit.get_values()(299),
+    fit.get_values()(400);
+  CHECK(selected_density.isApprox(expected_density, 2e-4));
+
+  Kde1d reflected(0.0, 1.0, "continuous");
+  reflected.fit(1.0 - observations.array());
+  CHECK(fit.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(fit.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("two-sided exploding endpoints retain the bulk fit",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations =
+    (0.5 * std::acos(-1.0) * probabilities.array()).sin().square();
+  Kde1d fit(0.0, 1.0, "continuous");
+  fit.fit(observations);
+
+  Kde1d bulk(0.0, 1.0, "continuous", 1.0, fit.get_bandwidth());
+  bulk.fit(observations);
+  CHECK(fit.get_values().isApprox(bulk.get_values(), 1e-12));
+  CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
+}
+
+TEST_CASE("boundary experts support weights and manual bandwidths",
+          "[boundary-expert]")
+{
+  const Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(200, 0.5 / 200.0, 1.0 - 0.5 / 200.0);
+  const Eigen::VectorXd observations = (-(1.0 - probabilities.array()).log());
+  const Eigen::VectorXd weights =
+    Eigen::VectorXd::LinSpaced(observations.size(), 0.5, 1.5);
+
+  Kde1d weighted(0.0, NAN, "continuous");
+  weighted.fit(observations, weights);
+  Kde1d weighted_manual(0.0, NAN, "continuous", 1.0, weighted.get_bandwidth());
+  weighted_manual.fit(observations, weights);
+  CHECK(weighted.get_values().isApprox(weighted_manual.get_values(), 1e-12));
+  CHECK(weighted.get_edf() == Approx(weighted_manual.get_edf()).epsilon(1e-12));
+
+  Kde1d rescaled_weights(0.0, NAN, "continuous");
+  rescaled_weights.fit(observations, 7.0 * weights);
+  CHECK(weighted.get_values().isApprox(rescaled_weights.get_values(), 1e-12));
+  CHECK(weighted.get_edf() ==
+        Approx(rescaled_weights.get_edf()).epsilon(1e-12));
+  CHECK(weighted.get_loglik() ==
+        Approx(rescaled_weights.get_loglik()).epsilon(1e-12));
+
+  Eigen::VectorXd zero_weights = weights;
+  for (Eigen::Index i = 1; i < zero_weights.size(); i += 5)
+    zero_weights(i) = 0.0;
+  Eigen::VectorXd retained_observations(160);
+  Eigen::VectorXd retained_weights(160);
+  Eigen::Index retained_index = 0;
+  for (Eigen::Index i = 0; i < zero_weights.size(); ++i) {
+    if (zero_weights(i) > 0.0) {
+      retained_observations(retained_index) = observations(i);
+      retained_weights(retained_index++) = zero_weights(i);
+    }
+  }
+  Kde1d with_zeros(0.0, NAN, "continuous");
+  with_zeros.fit(observations, zero_weights);
+  Kde1d without_zeros(0.0, NAN, "continuous");
+  without_zeros.fit(retained_observations, retained_weights);
+  CHECK(with_zeros.get_values().isApprox(without_zeros.get_values(), 1e-12));
+  CHECK(with_zeros.get_edf() == Approx(without_zeros.get_edf()).epsilon(1e-12));
+
+  Kde1d reflected(NAN, 0.0, "continuous");
+  reflected.fit(-observations, weights);
+  CHECK(
+    weighted.get_values().isApprox(reflected.get_values().reverse(), 1e-12));
+  CHECK(weighted.get_edf() == Approx(reflected.get_edf()).epsilon(1e-12));
+
+  Kde1d linear(0.0, NAN, "continuous", 1.0, NAN, 1);
+  linear.fit(observations);
+  Kde1d linear_bulk(0.0, NAN, "continuous", 1.0, linear.get_bandwidth(), 1);
+  linear_bulk.fit(observations);
+  CHECK(linear.get_values().isApprox(linear_bulk.get_values(), 1e-12));
+  CHECK(linear.get_edf() == Approx(linear_bulk.get_edf()).epsilon(1e-12));
+
+  Kde1d small(0.0, NAN, "continuous");
+  small.fit(observations.head(15));
+  Kde1d small_bulk(0.0, NAN, "continuous", 1.0, small.get_bandwidth());
+  small_bulk.fit(observations.head(15));
+  CHECK(small.get_values().isApprox(small_bulk.get_values(), 1e-12));
+  CHECK(small.get_edf() == Approx(small_bulk.get_edf()).epsilon(1e-12));
 }
 
 TEST_CASE("finite support truncates density", "[finite-support]")
@@ -439,6 +650,7 @@ TEST_CASE("bandwidth selection on refit", "[bandwidth][refit]")
     CHECK(std::isnan(from_grid.get_bandwidth()));
     CHECK(from_grid.get_multiplier() == Approx(1.0));
     CHECK(from_grid.get_degree() == 2);
+    CHECK(from_grid.get_boundary_repair());
   }
 }
 

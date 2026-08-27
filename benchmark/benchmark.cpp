@@ -10,12 +10,29 @@ TEST_CASE("continuous KDE performance", "[!benchmark]")
   unbounded.array() += 0.35 * (4.0 * unbounded.array()).sin();
   Eigen::VectorXd bounded =
     (1.0 / (1.0 + (-unbounded.array()).exp())).matrix();
+  Eigen::VectorXd probabilities = Eigen::VectorXd::LinSpaced(
+    unbounded.size(), 0.5 / unbounded.size(), 1.0 - 0.5 / unbounded.size());
+  Eigen::VectorXd one_sided = (-(1.0 - probabilities.array()).log());
   Eigen::VectorXd weights = Eigen::VectorXd::LinSpaced(10000, 0.5, 1.5);
 
   BENCHMARK("fit/end-to-end/bounded/tll/n=10000")
   {
     kde1d::Kde1d fit(0.0, 1.0, "continuous", 1.0, NAN, 2, 400);
     fit.fit(bounded);
+    return fit.get_loglik();
+  };
+
+  BENCHMARK("fit/end-to-end/one-sided-finite-expert/tll/n=10000")
+  {
+    kde1d::Kde1d fit(0.0, NAN, "continuous", 1.0, NAN, 2, 400);
+    fit.fit(one_sided);
+    return fit.get_loglik();
+  };
+
+  BENCHMARK("fit/end-to-end/two-sided-finite-experts/tll/n=10000")
+  {
+    kde1d::Kde1d fit(0.0, 1.0, "continuous", 1.0, NAN, 2, 400);
+    fit.fit(probabilities);
     return fit.get_loglik();
   };
 

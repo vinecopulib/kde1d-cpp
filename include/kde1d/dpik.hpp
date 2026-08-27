@@ -36,7 +36,7 @@ private:
 };
 
 //! @param x vector of observations.
-//! @param weigths optional vector of weights for each observation.
+//! @param weights optional vector of weights for each observation.
 inline PluginBandwidthSelector::PluginBandwidthSelector(
   const Eigen::VectorXd& x,
   const Eigen::VectorXd& weights)

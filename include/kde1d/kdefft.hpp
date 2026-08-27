@@ -38,7 +38,7 @@ private:
 //! @param bandwidth the bandwidth parameter.
 //! @param lower lower bound of the grid.
 //! @param upper bound of the grid.
-//! @param weigths optional vector of weights for each observation.
+//! @param weights optional vector of weights for each observation.
 //! @param num_bins number of bins for the FFT grid.
 inline KdeFFT::KdeFFT(const Eigen::VectorXd& x,
                       double bandwidth,

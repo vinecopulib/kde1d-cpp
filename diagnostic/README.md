@@ -1,31 +1,60 @@
-# Boundary diagnostics
+# Boundary-expert validation
 
-The diagnostic sweep evaluates deterministic samples from distributions with
-known densities and CDFs. It covers finite and one-sided supports, support
-scales from `1e-4` to `1e4`, polynomial degrees 0--2, grid sizes 100--1,000,
-and fixed or automatically selected bandwidths. Evaluation points approach the
-boundary on a logarithmic scale.
+This directory contains the retained validation path for the native estimator.
+The estimator itself, including the support transforms, endpoint classifier,
+boundary kernels, fusion, bandwidth handling, and EDF approximation, is
+documented in [`../docs/overview-continuous.dox`](../docs/overview-continuous.dox).
 
-Generate the raw CSV data and an optional summary and PDF with:
+## Final comparison
+
+`validate_native_boundary_experts.R` evaluates one installed implementation at
+a time. Run it with these method labels:
+
+| method | installed revision | estimator |
+|---|---|---|
+| `pre-pr` | parent `7faec53`, with C++ `b16d514` | production log transform on one-sided support and probit transform on two-sided support |
+| `bulk` | candidate | fourth-root/probit bulk with `boundary_repair = FALSE` |
+| `expert` | candidate | fourth-root/probit bulk with the selected boundary experts |
+
+Using the actual pre-PR revision is intentional: emulating its log transform in
+the candidate would miss other grid and numerical behavior of the production
+benchmark.
+
+The suite covers lower- and upper-bounded versions of five one-sided densities
+at scales `1e-4`, `1`, and `1e4`, seven two-sided densities, and sample sizes
+25, 100, 1,000, and 2,000 for bulk degrees zero, one, and two. It writes
+replication-level global and boundary ISE, EDF, and log-likelihood, plus
+integrated squared bias and variance summaries. Paired seeds are shared across
+methods and degrees.
+
+From the R-package root, install each requested revision into a separate
+library and run, for example:
 
 ```sh
-diagnostic/run_boundary_diagnostics.sh > boundary-diagnostics.csv
-Rscript diagnostic/plot_boundary_diagnostics.R boundary-diagnostics.csv
+Rscript inst/include/kde1d-cpp/diagnostic/validate_native_boundary_experts.R \
+  pre-pr diagnostic-results/pre-pr.csv 100 /path/to/pre-pr-library
+Rscript inst/include/kde1d-cpp/diagnostic/validate_native_boundary_experts.R \
+  bulk diagnostic-results/bulk.csv 100 /path/to/candidate-library
+Rscript inst/include/kde1d-cpp/diagnostic/validate_native_boundary_experts.R \
+  expert diagnostic-results/expert.csv 100 /path/to/candidate-library
 ```
 
-The executable is deliberately not registered with CTest. Its output is for
-comparing numerical behavior between revisions; stable invariants discovered
-through the sweep should be promoted to focused regression tests.
+Generated CSVs and figures are not versioned. The final aggregate comparison
+is generated with:
 
-The summary reports four complementary diagnostics:
+```sh
+Rscript inst/include/kde1d-cpp/diagnostic/summarize_native_boundary_validation.R \
+  diagnostic-results/pre-pr.csv diagnostic-results/bulk.csv \
+  diagnostic-results/expert.csv diagnostic-results/ratios
+```
 
-- PDF and CDF error against known distributions near the boundary;
-- equivariance when the same data are expressed at different scales;
-- agreement between left-bounded fits and reflected right-bounded fits;
-- sensitivity to the interpolation grid size.
+`benchmark_native_boundary_experts.R` performs coarse end-to-end R timings.
+`extract_native_boundary_examples.R` and
+`plot_native_boundary_examples.R` recreate the representative density montage
+using classifier-stratified median-ISE realizations selected by the summary
+script.
 
-The metrics deliberately remain separate. Relative density error is not useful
-where the true density vanishes, while CDF error can remain small despite a
-severely unstable pointwise density. Candidate repairs should therefore be
-checked against both finite nonzero boundary densities and densities that tend
-to zero.
+Final results are recorded in `NATIVE_RESULTS.md`; `PR_COMMENT.md` contains the
+copy-ready methodological description and report. Superseded R prototypes,
+candidate estimators, tuning outputs, and the standalone C++ diagnostic were
+removed; stable numerical properties are covered by unit and invariant tests.
