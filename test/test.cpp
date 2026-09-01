@@ -766,6 +766,34 @@ TEST_CASE("bandwidth selection on refit", "[bandwidth][refit]")
     CHECK(from_grid.get_degree() == 2);
     CHECK(from_grid.get_boundary_repair());
   }
+
+  SECTION("a restored grid retains the fit state")
+  {
+    Kde1d fitted(NAN, NAN, VarType::continuous, 1.7, NAN, 1, 128, false);
+    fitted.fit(x_ub);
+    Kde1d restored(interp::InterpolationGrid(fitted.get_grid_points(),
+                                              fitted.get_values(),
+                                              0),
+                   fitted.get_xmin(),
+                   fitted.get_xmax(),
+                   fitted.get_type(),
+                   fitted.get_prob0(),
+                   fitted.get_state());
+
+    CHECK(std::isnan(restored.get_bandwidth_spec()));
+    CHECK(restored.get_bandwidth() == Approx(fitted.get_bandwidth()));
+    CHECK(restored.get_multiplier() == Approx(fitted.get_multiplier()));
+    CHECK(restored.get_degree() == fitted.get_degree());
+    CHECK(restored.get_grid_size() == fitted.get_grid_size());
+    CHECK(restored.get_boundary_repair() == fitted.get_boundary_repair());
+    CHECK(restored.get_edf() == Approx(fitted.get_edf()));
+    CHECK(restored.get_loglik() == Approx(fitted.get_loglik()));
+
+    Kde1d fresh(NAN, NAN, VarType::continuous, 1.7, NAN, 1, 128, false);
+    fresh.fit(x_ub * 10.0);
+    restored.fit(x_ub * 10.0);
+    CHECK(restored.get_bandwidth() == Approx(fresh.get_bandwidth()));
+  }
 }
 
 TEST_CASE("misc checks", "[input-checks][argument-checks]")
