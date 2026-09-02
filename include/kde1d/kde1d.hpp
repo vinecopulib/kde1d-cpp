@@ -26,6 +26,22 @@ enum class VarType
 //! zero-inflated one it constrains the continuous component only, leaving the
 //! zeros exempt.
 //!
+//! Holds the construction controls and attained diagnostics of a fitted
+//! `Kde1d`. Together with the interpolation grid, support, variable type, and
+//! zero-inflation probability, it is sufficient to restore an estimator
+//! without refitting it.
+struct Kde1dState
+{
+  double multiplier{ 1.0 };
+  double bandwidth_spec{ NAN };
+  double bandwidth{ NAN };
+  size_t degree{ 2 };
+  size_t grid_size{ 400 };
+  bool boundary_repair{ true };
+  double edf{ NAN };
+  double loglik{ NAN };
+};
+
 //! See @ref overview-continuous and @ref overview-discrete for the estimator
 //! itself -- the support transforms, the endpoint treatment, and how the
 //! effective degrees of freedom are approximated.
@@ -58,10 +74,24 @@ public:
         double prob0 = 0.0);
 
   Kde1d(const interp::InterpolationGrid& grid,
+        double xmin,
+        double xmax,
+        VarType type,
+        double prob0,
+        const Kde1dState& state);
+
+  Kde1d(const interp::InterpolationGrid& grid,
         double xmin = NAN,
         double xmax = NAN,
         std::string type = "continuous",
         double prob0 = 0.0);
+
+  Kde1d(const interp::InterpolationGrid& grid,
+        double xmin,
+        double xmax,
+        std::string type,
+        double prob0,
+        const Kde1dState& state);
 
   void fit(const Eigen::VectorXd& x,
            const Eigen::VectorXd& weights = Eigen::VectorXd());
@@ -110,6 +140,10 @@ public:
   //!   the transformed scale rather than the data's; and a repaired endpoint
   //!   is fitted with its own bandwidth, which this does not report.
   double get_bandwidth() const { return bandwidth_; }
+  //! @return the bandwidth supplied at construction, or `NaN` when bandwidth
+  //!   selection is automatic. Unlike `get_bandwidth()`, this remains `NaN`
+  //!   after an automatic fit so it can be used to reproduce the fit controls.
+  double get_bandwidth_spec() const { return bandwidth_spec_; }
   //! @return the polynomial degree used by the local-likelihood
   //!   estimator (0, 1, or 2).
   size_t get_degree() const { return degree_; }
@@ -130,6 +164,12 @@ public:
   //!   added analytically rather than evaluated: the zeros are removed before
   //!   the continuous component is fitted.
   double get_loglik() const { return loglik_; }
+  //! @return the construction controls and fitted diagnostics.
+  Kde1dState get_state() const
+  {
+    return { multiplier_, bandwidth_spec_, bandwidth_, degree_, grid_size_,
+             boundary_repair_, edf_, loglik_ };
+  }
   //! Updates the support bounds. Only valid before `fit()` has been called.
   //! @param xmin lower bound (`NaN` for unbounded).
   //! @param xmax upper bound (`NaN` for unbounded).
@@ -379,6 +419,46 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
   }
 }
 
+//! Restores a fitted model from an interpolation grid and its state.
+//! @param grid the interpolation grid.
+//! @param xmin lower bound for the support, `NaN` means no boundary.
+//! @param xmax upper bound for the support, `NaN` means no boundary.
+//! @param type variable type.
+//! @param prob0 point mass at zero for a zero-inflated variable.
+//! @param state construction controls and fitted diagnostics to restore.
+inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
+                    double xmin,
+                    double xmax,
+                    VarType type,
+                    double prob0,
+                    const Kde1dState& state)
+  : Kde1d(grid, xmin, xmax, type, prob0)
+{
+  if (state.multiplier <= 0.0) {
+    throw std::invalid_argument("multiplier must be positive");
+  }
+  if (!std::isnan(state.bandwidth_spec) && state.bandwidth_spec <= 0.0) {
+    throw std::invalid_argument("bandwidth must be positive");
+  }
+  if (!std::isnan(state.bandwidth) && state.bandwidth <= 0.0) {
+    throw std::invalid_argument("bandwidth must be positive");
+  }
+  if (state.degree > 2) {
+    throw std::invalid_argument("degree must be 0, 1 or 2");
+  }
+  if (state.grid_size < 4) {
+    throw std::invalid_argument("grid_size must be at least 4");
+  }
+  multiplier_ = state.multiplier;
+  bandwidth_spec_ = state.bandwidth_spec;
+  bandwidth_ = state.bandwidth;
+  degree_ = state.degree;
+  grid_size_ = state.grid_size;
+  boundary_repair_ = state.boundary_repair;
+  edf_ = state.edf;
+  loglik_ = state.loglik;
+}
+
 //! constructor for fitting the density estimate.
 //! @param xmin lower bound for the support, `NaN` means no boundary. Must be
 //!   an integer for a discrete variable, where it is the lowest level that can
@@ -439,6 +519,23 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
                     std::string type,
                     double prob0)
   : Kde1d(grid, xmin, xmax, this->as_enum(type), prob0)
+{
+}
+
+//! Restores a fitted model from an interpolation grid and its state.
+//! @param grid the interpolation grid.
+//! @param xmin lower bound for the support, `NaN` means no boundary.
+//! @param xmax upper bound for the support, `NaN` means no boundary.
+//! @param type variable type.
+//! @param prob0 point mass at zero for a zero-inflated variable.
+//! @param state construction controls and fitted diagnostics to restore.
+inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
+                    double xmin,
+                    double xmax,
+                    std::string type,
+                    double prob0,
+                    const Kde1dState& state)
+  : Kde1d(grid, xmin, xmax, this->as_enum(type), prob0, state)
 {
 }
 
