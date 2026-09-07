@@ -541,16 +541,18 @@ inline Kde1d::Kde1d(const interp::InterpolationGrid& grid,
 
 //! Fits the kernel density estimate to data.
 //!
-//! Observations that are `NaN` are dropped. Weights are rescaled to average
-//! one, so only their relative sizes matter. Calling this again re-selects the
-//! bandwidth unless one was supplied at construction.
+//! Observations that are `NaN` are dropped, as are those whose weight is `NaN`
+//! or zero. Weights are rescaled to average one, so only their relative sizes
+//! matter. Calling this again re-selects the bandwidth unless one was supplied
+//! at construction.
 //!
 //! @param x vector of observations.
 //! @param weights vector of weights for each observation (optional).
 //! @throws std::invalid_argument if `x` is empty, if `weights` is given with a
-//!   different length, if the variable is discrete and any observation is not
-//!   an integer, or if any observation lies outside `[xmin, xmax]` -- for a
-//!   zero-inflated variable, any nonzero observation.
+//!   different length, if any weight is infinite or negative, if the drop
+//!   markers above leave no observation standing, if the variable is discrete
+//!   and any observation is not an integer, or if any observation lies outside
+//!   `[xmin, xmax]` -- for a zero-inflated variable, any nonzero observation.
 //! @throws std::runtime_error if the discrete masses cannot be normalized.
 inline void
 Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
@@ -563,6 +565,14 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
   Eigen::VectorXd xx = x;
   Eigen::VectorXd w = weights;
   tools::remove_nans(xx, w);
+  // A NaN observation, a NaN weight and a zero weight are each a drop marker,
+  // so a caller can legitimately pass any of them -- but when they drop every
+  // row, `w.mean()` is a division by zero and the grid below is built from an
+  // empty sample, which terminates the process instead of raising.
+  if (xx.size() == 0) {
+    throw std::invalid_argument(
+      "x and weights must leave at least one observation standing");
+  }
 
   if (w.size() > 0) {
     w /= w.mean();
@@ -1684,6 +1694,17 @@ Kde1d::check_inputs(const Eigen::VectorXd& x,
 
   if ((weights.size() > 0) && (weights.size() != x.size()))
     throw std::invalid_argument("x and weights must have the same size");
+
+  if (weights.size() > 0) {
+    // Neither of these is a missing-value marker and both survive the
+    // rescaling below: an infinite weight normalizes every other one to zero,
+    // and a negative one yields a density that is not the weighted one.
+    if (weights.array().isInf().any())
+      throw std::invalid_argument("weights must not be infinite");
+    // `NaN < 0` is false, so this reads only the entries that are not markers.
+    if ((weights.array() < 0.0).any())
+      throw std::invalid_argument("weights must be nonnegative");
+  }
 }
 
 inline void
