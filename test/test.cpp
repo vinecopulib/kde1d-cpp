@@ -280,6 +280,45 @@ TEST_CASE("two-sided exploding endpoints retain the bulk fit",
   CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
 }
 
+TEST_CASE("inputs that leave nothing to fit are refused", "[kde1d]")
+{
+  const Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(20, -2.0, 2.0);
+  const Eigen::VectorXd ones = Eigen::VectorXd::Ones(20);
+  Kde1d fit(NAN, NAN, "continuous");
+
+  // `remove_nans` treats a NaN observation, a NaN weight and a zero weight as
+  // drop markers, so each of these drops every row. `fit` then rescaled by a
+  // zero sum and interpolated an empty grid, terminating the process.
+  CHECK_THROWS(fit.fit(x, Eigen::VectorXd::Constant(20, NAN)));
+  CHECK_THROWS(fit.fit(x, Eigen::VectorXd::Zero(20)));
+  CHECK_THROWS(fit.fit(Eigen::VectorXd::Constant(20, NAN), ones));
+  CHECK_THROWS(fit.fit(Eigen::VectorXd::Constant(20, NAN)));
+
+  // Neither of these is a marker: an infinite weight normalizes the rest to
+  // zero, and a negative one gave a density that was not the weighted one.
+  Eigen::VectorXd infinite = ones;
+  infinite(7) = std::numeric_limits<double>::infinity();
+  CHECK_THROWS(fit.fit(x, infinite));
+
+  Eigen::VectorXd negative = ones;
+  negative(11) = -1.0;
+  CHECK_THROWS(fit.fit(x, negative));
+
+  // Partial markers stay legal: they drop their own row and nothing else, and
+  // NaN and zero must agree, since `remove_nans` treats them the same.
+  Eigen::VectorXd as_nan = ones;
+  Eigen::VectorXd as_zero = ones;
+  for (Eigen::Index i = 1; i < ones.size(); i += 2) {
+    as_nan(i) = NAN;
+    as_zero(i) = 0.0;
+  }
+  Kde1d dropped(NAN, NAN, "continuous");
+  Kde1d zeroed(NAN, NAN, "continuous");
+  CHECK_NOTHROW(dropped.fit(x, as_nan));
+  CHECK_NOTHROW(zeroed.fit(x, as_zero));
+  CHECK(dropped.get_values().isApprox(zeroed.get_values(), 1e-12));
+}
+
 TEST_CASE("boundary experts support weights and manual bandwidths",
           "[boundary-expert]")
 {
