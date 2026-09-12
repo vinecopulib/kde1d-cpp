@@ -10,3 +10,9 @@ option(OPT_ASAN                  "Use adress sanitizer (debug)"      "ON")
 option(BUILD_TESTING             "Build tests."                      "ON")
 option(BUILD_BENCHMARKS          "Build benchmarks."                 "OFF")
 option(CODE_COVERAGE             "Code coverage."                    "OFF")
+
+# `OPT_ASAN` only reaches `CMAKE_CXX_FLAGS_DEBUG`, so it is silently inert in a
+# release build, and it cannot ask for anything but the address sanitizer. This
+# takes an explicit `-fsanitize=` list and applies it to every build type.
+set(SANITIZERS "" CACHE STRING
+    "Comma-separated -fsanitize= list, e.g. address,undefined. Empty disables.")

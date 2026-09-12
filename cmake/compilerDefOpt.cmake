@@ -29,6 +29,17 @@ if(NOT WIN32)
         endif()
     endif()
 
+    if(SANITIZERS)
+        # Sanitizer flags belong to every configuration, not just Debug: the
+        # release build is the one whose optimizations the checks have to
+        # survive. `-fno-sanitize-recover` makes a finding exit nonzero --
+        # UBSan otherwise prints a diagnostic and carries on, so CI would pass.
+        # Frame pointers and line tables are what make the reports readable.
+        add_compile_options(-fsanitize=${SANITIZERS} -fno-sanitize-recover=all
+                            -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${SANITIZERS})
+    endif()
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
         if(NOT EXISTS ${CMAKE_CXX_COMPILER})

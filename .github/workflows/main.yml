@@ -117,15 +117,34 @@ jobs:
         shell: bash        
 
   # The unit tests pass on inputs whose memory behaviour is still wrong: a
-  # zero-size `realloc` is undefined in C23, but it returns normally. CRAN runs
-  # the R package's tests under valgrind and reports such calls as errors, so
-  # this suite has to be run the same way to catch them here first.
-  valgrind:
+  # zero-size `realloc` is undefined in C23, but it returns normally, and the
+  # same is true of most undefined behaviour. CRAN runs the R package's tests
+  # under valgrind and reports such calls as errors, so this suite has to be
+  # run under a checker to catch them here first.
+  #
+  # Valgrind and the address sanitizer both instrument allocation and cannot
+  # share a process, so they are separate matrix entries. They also do not see
+  # the same things: valgrind catches the zero-size `realloc` above, which no
+  # sanitizer flags, while the sanitizers catch signed overflow, bad shifts,
+  # invalid casts and stack errors that valgrind cannot see. The leak
+  # sanitizer comes with the address sanitizer on Linux, and GCC and Clang
+  # disagree often enough about what UBSan instruments to be worth both.
+  memory-checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg:
+          - { name: 'valgrind',            cc: gcc,   cxx: g++,     sanitizers: '' }
+          - { name: 'asan+lsan+ubsan GNU', cc: gcc,   cxx: g++,     sanitizers: 'address,undefined' }
+          - { name: 'asan+lsan+ubsan Clang', cc: clang, cxx: clang++, sanitizers: 'address,undefined' }
     runs-on: ubuntu-latest
-    name: ubuntu-latest (valgrind)
+    name: ubuntu-latest (${{ matrix.cfg.name }})
     env:
       BOOST_VERSION: 1.84.0
       EIGEN_VERSION: 3.4.0
+      CMAKE_PREFIX_PATH: /home/runner/work
+      CC: ${{ matrix.cfg.cc }}
+      CXX: ${{ matrix.cfg.cxx }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -143,14 +162,33 @@ jobs:
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: 'false'
       - name: Install valgrind
+        if: matrix.cfg.sanitizers == ''
         run: sudo apt-get update && sudo apt-get install -y valgrind
-      - name: Build and run the tests under valgrind
+      - name: Build
+        # `OPT_ASAN` is on by default and would add `-fsanitize=address` to the
+        # debug flags, which the valgrind entry must not carry.
         run: |
-          cmake -S . -B valgrind-build -DCMAKE_BUILD_TYPE=Release -DOPT_ASAN=OFF
-          cmake --build valgrind-build
+          cmake -S . -B check -DCMAKE_BUILD_TYPE=Release -DOPT_ASAN=OFF \
+            -DSANITIZERS='${{ matrix.cfg.sanitizers }}'
+          cmake --build check -j
+        shell: bash
+      - name: Run the tests under ${{ matrix.cfg.name }}
+        # Both binaries run even if the first fails, so one report does not
+        # hide the other; the loop keeps the worst exit status.
+        run: |
+          status=0
           for t in kde1d-unit-test kde1d-invariant-test; do
-            valgrind --error-exitcode=1 --errors-for-leak-kinds=none \
-              valgrind-build/bin/$t
+            echo "::group::$t"
+            if [ -z '${{ matrix.cfg.sanitizers }}' ]; then
+              valgrind --error-exitcode=1 --errors-for-leak-kinds=none \
+                check/bin/$t || status=1
+            else
+              check/bin/$t || status=1
+            fi
+            echo "::endgroup::"
           done
+          exit $status
+        shell: bash
         env:
-          CMAKE_PREFIX_PATH: /home/runner/work
+          ASAN_OPTIONS: detect_leaks=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
