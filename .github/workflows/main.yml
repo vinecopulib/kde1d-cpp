@@ -115,3 +115,42 @@ jobs:
           cmake --build consumer
           ./consumer/consumer
         shell: bash        
+
+  # The unit tests pass on inputs whose memory behaviour is still wrong: a
+  # zero-size `realloc` is undefined in C23, but it returns normally. CRAN runs
+  # the R package's tests under valgrind and reports such calls as errors, so
+  # this suite has to be run the same way to catch them here first.
+  valgrind:
+    runs-on: ubuntu-latest
+    name: ubuntu-latest (valgrind)
+    env:
+      BOOST_VERSION: 1.84.0
+      EIGEN_VERSION: 3.4.0
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        id: install-dependencies
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@main
+        with:
+          os: ubuntu-latest
+          platform: x64
+          boost_install_dir: '/home/runner/work'
+          eigen_install_dir: '/home/runner/work'
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
+          wdm: 'false'
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Build and run the tests under valgrind
+        run: |
+          cmake -S . -B valgrind-build -DCMAKE_BUILD_TYPE=Release -DOPT_ASAN=OFF
+          cmake --build valgrind-build
+          for t in kde1d-unit-test kde1d-invariant-test; do
+            valgrind --error-exitcode=1 --errors-for-leak-kinds=none \
+              valgrind-build/bin/$t
+          done
+        env:
+          CMAKE_PREFIX_PATH: /home/runner/work
