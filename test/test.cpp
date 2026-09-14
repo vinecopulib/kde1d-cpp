@@ -280,6 +280,63 @@ TEST_CASE("two-sided exploding endpoints retain the bulk fit",
   CHECK(fit.get_edf() == Approx(bulk.get_edf()).epsilon(1e-12));
 }
 
+TEST_CASE("dropping every row does not reallocate to size zero", "[tools]")
+{
+  // `x.conservativeResize(n)` with `n == 0` reaches Eigen's `aligned_realloc`,
+  // which calls `std::realloc(ptr, 0)`. That is deprecated in C17 and
+  // undefined in C23, and valgrind reports it as an error -- which is how CRAN
+  // found it in the R package, via a zero-inflated fit whose observations were
+  // all zero. Run this suite under valgrind to see the regression; the size
+  // checks below only pin down the behaviour the fix has to preserve.
+  const Eigen::VectorXd all_nan = Eigen::VectorXd::Constant(20, NAN);
+  const Eigen::VectorXd ones = Eigen::VectorXd::Ones(20);
+
+  SECTION("every observation is NaN")
+  {
+    Eigen::VectorXd x = all_nan;
+    Eigen::VectorXd w = ones;
+    tools::remove_nans(x, w);
+    CHECK(x.size() == 0);
+    CHECK(w.size() == 0);
+  }
+
+  SECTION("every weight is a drop marker")
+  {
+    Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(20, -2.0, 2.0);
+    Eigen::VectorXd w = Eigen::VectorXd::Zero(20);
+    tools::remove_nans(x, w);
+    CHECK(x.size() == 0);
+    CHECK(w.size() == 0);
+  }
+
+  SECTION("no weights are given")
+  {
+    Eigen::VectorXd x = all_nan;
+    Eigen::VectorXd w;
+    tools::remove_nans(x, w);
+    CHECK(x.size() == 0);
+    CHECK(w.size() == 0);
+  }
+
+  SECTION("x is already empty")
+  {
+    Eigen::VectorXd x;
+    Eigen::VectorXd w;
+    tools::remove_nans(x, w);
+    CHECK(x.size() == 0);
+  }
+
+  SECTION("a zero-inflated fit sees only zeros")
+  {
+    // The path CRAN reported: `fit` zeroes the weight of every zero
+    // observation, marks those rows NaN and calls `remove_nans` a second time,
+    // which here empties both vectors.
+    Kde1d fit(0.0, NAN, "zero_inflated");
+    CHECK_NOTHROW(fit.fit(Eigen::VectorXd::Zero(20)));
+    CHECK(std::isnan(fit.get_bandwidth()));
+  }
+}
+
 TEST_CASE("inputs that leave nothing to fit are refused", "[kde1d]")
 {
   const Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(20, -2.0, 2.0);

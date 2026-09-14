@@ -82,6 +82,20 @@ remove_nans(Eigen::VectorXd& x, Eigen::VectorXd& weights)
   }
 
   // remove nan rows
+  //
+  // `last` is unsigned, so it wraps to `SIZE_MAX` when every row is dropped
+  // (or when `x` arrived empty) and the new size is zero. `conservativeResize`
+  // would then reach Eigen's `aligned_realloc`, which calls
+  // `std::realloc(ptr, 0)` -- deprecated in C17, undefined in C23, and
+  // reported as an error by valgrind. Swapping in a fresh empty vector only
+  // exchanges storage pointers; the old buffer is released by `free`.
+  if (last + 1 == 0) {
+    Eigen::VectorXd().swap(x);
+    if (weights.size() > 0)
+      Eigen::VectorXd().swap(weights);
+    return;
+  }
+
   x.conservativeResize(last + 1);
   if (weights.size() > 0)
     weights.conservativeResize(last + 1);
