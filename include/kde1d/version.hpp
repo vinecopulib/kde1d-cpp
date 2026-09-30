@@ -16,7 +16,7 @@
 //  KDE1D_VERSION / 100 % 1000 is the minor version
 //  KDE1D_VERSION / 100000 is the major version
 
-#define KDE1D_VERSION 000101
+#define KDE1D_VERSION 100203
 
 //
 //  KDE1D_LIB_VERSION must be defined to be the same as
@@ -24,4 +24,4 @@
 //  major version number, y is the minor version number, and z is the patch
 //  level if not 0.
 
-#define KDE1D_LIB_VERSION "0_1_1"
+#define KDE1D_LIB_VERSION "1_2_3"

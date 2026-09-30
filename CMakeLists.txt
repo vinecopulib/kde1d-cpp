@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 set(CMAKE_CXX_STANDARD 17)
 
-project(kde1d VERSION 1.0)
+project(kde1d VERSION 1.2.3)
 
 include(cmake/findDependencies.cmake      REQUIRED)
 
