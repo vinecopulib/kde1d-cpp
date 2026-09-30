@@ -134,7 +134,15 @@ PluginBandwidthSelector::ll_ibias2(size_t degree)
   } else {
     throw std::invalid_argument("degree must be one of {0, 1, 2}.");
   }
-  return bin_counts_.cwiseProduct(arg).sum() / bin_counts_.sum();
+  // The functional is an average over the observations, so only occupied bins
+  // contribute. An empty bin far from the data has a pilot density of zero up
+  // to FFT round-off, where `arg` is inf or NaN and `0 * arg` is NaN.
+  double ibias2 = 0.0;
+  for (Eigen::Index k = 0; k < arg.size(); ++k) {
+    if (bin_counts_(k) > 0.0)
+      ibias2 += bin_counts_(k) * arg(k);
+  }
+  return ibias2 / bin_counts_.sum();
 }
 
 //! computes the integrated squared variance (without bandwidth and n terms).

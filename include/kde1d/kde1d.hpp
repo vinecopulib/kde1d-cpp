@@ -288,7 +288,8 @@ private:
                         const double& f2,
                         const double& bandwidth,
                         const double& s,
-                        const double& weight);
+                        const double& weight,
+                        const size_t& degree);
   Eigen::VectorXd boundary_transform(const Eigen::VectorXd& x,
                                      bool inverse = false);
   Eigen::VectorXd boundary_correct(const Eigen::VectorXd& x,
@@ -629,6 +630,8 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
     boundary_offset_ = 1e-5 * boundary_scale_;
   }
 
+  const double data_min = xx.minCoeff();
+  const double data_max = xx.maxCoeff();
   xx = boundary_transform(xx);
 
   // bandwidth selection (from the request, so refitting re-selects)
@@ -643,6 +646,16 @@ Kde1d::fit(const Eigen::VectorXd& x, const Eigen::VectorXd& weights)
 
   // order grid points from left to right
   grid_points = finalize_grid(grid_points);
+
+  // Keep the estimate positive between the smallest and largest observation.
+  // The binned kernel is truncated, so a point in a wide enough gap between
+  // observations would otherwise get a density of exactly zero.
+  const double value_floor =
+    std::numeric_limits<double>::epsilon() * values.maxCoeff();
+  for (Eigen::Index k = 0; k < values.size(); ++k) {
+    if (grid_points(k) >= data_min && grid_points(k) <= data_max)
+      values(k) = std::max(values(k), value_floor);
+  }
 
   Eigen::VectorXd influences = fitted.col(1);
   if (std::isnan(effective_xmin) && !std::isnan(effective_xmax))
@@ -965,27 +978,38 @@ Kde1d::fit_lp(const Eigen::VectorXd& x,
 
   // degree > 0
   f1 = kde_fft.kde_drv(1);
-  Eigen::VectorXd S = Eigen::VectorXd::Constant(f0.size(), bandwidth_);
-  Eigen::VectorXd b = f1.cwiseQuotient(f0);
-  if (degree_ == 2) {
+  if (degree_ == 2)
     f2 = kde_fft.kde_drv(2);
-    // D/R is notation from Hjort and Jones' AoS paper
-    Eigen::VectorXd D = f2.cwiseQuotient(f0) - b.cwiseProduct(b);
-    Eigen::VectorXd R = 1 / (1.0 + bandwidth_ * bandwidth_ * D.array()).sqrt();
-    // this is our notation
-    S = (R / bandwidth_).array().pow(2);
-    b *= bandwidth_ * bandwidth_;
-    res.col(0) = bandwidth_ * S.cwiseSqrt().cwiseProduct(res.col(0));
-  }
-  res.col(0) = res.col(0).array() * (-0.5 * b.array().pow(2) * S.array()).exp();
+  const double B = bandwidth_ * bandwidth_;
 
   for (size_t k = 0; k < m; k++) {
     if (!std::isfinite(f0(k)) || f0(k) <= density_floor) {
       res.row(k).setZero();
       continue;
     }
-    res(k, 1) =
-      calculate_infl(x.size(), f0(k), f1(k), f2(k), bandwidth_, S(k), wbin(k));
+    const double b = f1(k) / f0(k);
+    // local linear fit (S = 1 / h^2)
+    double fit = f0(k) * std::exp(-0.5 * B * b * b);
+    double S = 1.0 / B;
+    size_t degree = 1;
+    if (degree_ == 2) {
+      // D/R is notation from Hjort and Jones' AoS paper: the local quadratic
+      // exists only where 1 + h^2 D > 0, which fails where the pilot's
+      // log-density is as curved as the kernel's own, as next to a clump of
+      // ties. There the local linear fit stands in.
+      const double denom = 1.0 + B * (f2(k) / f0(k) - b * b);
+      const double S2 = 1.0 / (B * denom);
+      const double fit2 =
+        f0(k) * std::sqrt(B * S2) * std::exp(-0.5 * B * B * b * b * S2);
+      if (denom > 0.0 && std::isfinite(fit2)) {
+        fit = fit2;
+        S = S2;
+        degree = 2;
+      }
+    }
+    res(k, 0) = fit;
+    res(k, 1) = calculate_infl(
+      x.size(), f0(k), f1(k), f2(k), bandwidth_, S, wbin(k), degree);
     if (!std::isfinite(res(k, 0)) || res(k, 0) < 0.0)
       res.row(k).setZero();
   }
@@ -1002,13 +1026,14 @@ Kde1d::calculate_infl(const size_t& n,
                       const double& f2,
                       const double& bandwidth,
                       const double& s,
-                      const double& weight)
+                      const double& weight,
+                      const size_t& degree)
 {
   double M_inverse00;
   double B = bandwidth * bandwidth;
-  if (degree_ == 0) {
+  if (degree == 0) {
     M_inverse00 = 1 / f0;
-  } else if (degree_ == 1) {
+  } else if (degree == 1) {
     Eigen::Matrix2d M;
     M(0, 0) = f0;
     M(0, 1) = B * f1;

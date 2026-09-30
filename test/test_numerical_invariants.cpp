@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include "../include/kde1d.hpp"
 #include "catch.hpp"
+#include "data/tied_gap_sample.hpp"
 
 namespace {
 
@@ -205,4 +206,78 @@ TEST_CASE("interpolation preserves nonuniform-grid reference values",
     expected_interpolation / expected_integral(0), 1e-12));
   CHECK(grid.integrate(queries).head(13).isApprox(
     expected_normalized_integral, 1e-12));
+}
+
+TEST_CASE("unbounded fits are scale equivariant",
+          "[numerical-invariants][scale]")
+{
+  Eigen::VectorXd probabilities =
+    Eigen::VectorXd::LinSpaced(500, 0.5 / 500.0, 1.0 - 0.5 / 500.0);
+  Eigen::VectorXd observations = kde1d::stats::qnorm(probabilities);
+  Eigen::VectorXd points = Eigen::VectorXd::LinSpaced(9, -3.0, 3.0);
+
+  for (size_t degree = 0; degree < 3; ++degree) {
+    kde1d::Kde1d reference(NAN, NAN, "continuous", 1.0, NAN, degree);
+    reference.fit(observations);
+
+    for (double scale : { 1e-4, 1e4 }) {
+      INFO("degree=" << degree << ", scale=" << scale);
+      kde1d::Kde1d scaled(NAN, NAN, "continuous", 1.0, NAN, degree);
+      scaled.fit(observations * scale);
+
+      CHECK(scaled.get_bandwidth() / scale ==
+            Approx(reference.get_bandwidth()).epsilon(1e-10));
+      CHECK((scaled.pdf(points * scale) * scale)
+              .isApprox(reference.pdf(points), 1e-10));
+    }
+  }
+}
+
+TEST_CASE("the density is positive between the observations",
+          "[numerical-invariants][gap]")
+{
+  // Two clumps twenty bandwidths apart: the binned kernel is truncated well
+  // before the middle of the gap.
+  Eigen::VectorXd observations(200);
+  observations.head(100) = Eigen::VectorXd::LinSpaced(100, -0.05, 0.05);
+  observations.tail(100) = Eigen::VectorXd::LinSpaced(100, 9.95, 10.05);
+  Eigen::VectorXd points = Eigen::VectorXd::LinSpaced(401, -0.05, 10.05);
+
+  for (size_t degree = 0; degree < 3; ++degree) {
+    INFO("degree=" << degree);
+    kde1d::Kde1d fit(NAN, NAN, "continuous", 1.0, 0.5, degree);
+    fit.fit(observations);
+    Eigen::VectorXd density = fit.pdf(points);
+    REQUIRE(density.array().isFinite().all());
+    CHECK(density.minCoeff() > 0.0);
+    CHECK(std::isfinite(fit.get_loglik()));
+  }
+}
+
+TEST_CASE("tied data with a gap select the plug-in bandwidth",
+          "[numerical-invariants][bandwidth][gap]")
+{
+  // The pilot density is zero up to FFT round-off in the empty bins, which
+  // must not reach the bias functional: the plug-in value is selected, not the
+  // normal-reference fallback (0.70996).
+  Eigen::VectorXd observations = tied_gap_sample();
+  kde1d::Kde1d fit;
+  fit.fit(observations);
+  CHECK(fit.get_bandwidth() == Approx(0.2245107160846).epsilon(1e-8));
+
+  // Next to the clump of ties at the cap the local quadratic degenerates, and
+  // a point in the gap is farther than the kernel reaches from any observation.
+  Eigen::VectorXd points = Eigen::VectorXd::LinSpaced(
+    2001, observations.minCoeff(), observations.maxCoeff());
+  for (size_t degree = 0; degree < 3; ++degree) {
+    INFO("degree=" << degree);
+    kde1d::Kde1d refit(NAN, NAN, "continuous", 1.0, NAN, degree);
+    refit.fit(observations);
+    Eigen::VectorXd density = refit.pdf(points);
+    REQUIRE(density.array().isFinite().all());
+    CHECK(density.minCoeff() > 0.0);
+    CHECK(refit.pdf(Eigen::VectorXd::Constant(1, 5.6796))(0) > 0.0);
+    CHECK(std::isfinite(refit.get_loglik()));
+    CHECK(std::isfinite(refit.get_edf()));
+  }
 }
